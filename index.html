@@ -48,7 +48,7 @@ body.bi .sr{display:block}
 <details><summary>Thêm truyện mới</summary>
 <label for="nTitle">Tên truyện</label><input id="nTitle">
 <div class="row"><div><label for="nSl">Ngôn ngữ gốc</label><input id="nSl" value="Tự nhận diện"></div><div><label for="nTl">Dịch sang</label><input id="nTl" value="Tiếng Việt"></div></div>
-<label for="nText">Văn bản (dán vào hoặc mở file .txt)</label><textarea id="nText" placeholder="Nên có dòng tiêu đề chương như 'Chapter 1', 'Chương 1', '第1章' để chia chương tự động."></textarea>
+<label for="nText">Văn bản (dán vào hoặc mở file .txt)</label><textarea id="nText" placeholder="Cần có dòng tiêu đề chương như 'Chapter 1', 'Chương 1', '第1章'. Phần trước Chương 1 (giới thiệu, mục lục...) sẽ tự bỏ qua."></textarea>
 <div class="row" style="margin-top:8px"><button id="nOpen">Mở file .txt</button><button id="nGo" class="p">Tạo truyện</button></div>
 <input id="nFile" type="file" accept=".txt,text/plain" hidden>
 </details>
@@ -104,7 +104,9 @@ const SEED=[
 ["Đô thị / hệ thống / hài","Giọng hiện đại, nhanh, hơi hài hước. Dùng từ ngữ đời thường, được phép dùng khẩu ngữ phù hợp. Giữ nguyên các thuật ngữ game/hệ thống (cấp độ, kỹ năng, nhiệm vụ) theo bảng thuật ngữ. Lời thoại ngắn gọn, đúng chất nhân vật, không văn vẻ hoá."],
 ["Fantasy phương Tây / light novel","Giọng kể rõ ràng, giàu hình ảnh nhưng không cổ trang. Tên người và địa danh giữ nguyên dạng Latin hoặc phiên âm chuẩn, không Hán Việt hoá. Xưng hô dịch theo bối cảnh: bệ hạ, đại nhân, ngài, cậu, cô. Giữ nguyên danh xưng phép thuật, chủng tộc theo thuật ngữ. Với light novel, giữ nhịp độc thoại nội tâm và tiếng lóng của nhân vật."]];
 /* ---------- Text processing ---------- */
-const CH=/^\s*(chapter\s+[\dIVXLC]+\b.*|chương\s+\d+.*|prologue\b.*|epilogue\b.*|第\s*[\d零一二三四五六七八九十百千两]+\s*[章节回卷].*)$/i;
+const CH=/^\s*((?:chapter|chương)\s+(?:[\dIVXLC]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|một|hai|ba|bốn|năm)\b.*|prologue\b.*|epilogue\b.*|第\s*[\d零一二三四五六七八九十百千两]+\s*[章节回卷].*)$/i;
+const C1=/^\s*(?:(?:chapter|chương)\s+(?:0*1|i|one|một)(?![\dA-Za-zÀ-ỹ])|第\s*(?:0*1|一)\s*[章节回卷])/i;
+const NOISE=/^[\s*=_\-~#·•+]{3,}$|^\s*(?:https?:\/\/|www\.)\S+\s*$/i;
 function splitText(text,max){
   const paras=text.split(/\n+/).map(s=>s.trim()).filter(Boolean),pieces=[];
   for(const p of paras){
@@ -118,14 +120,25 @@ function splitText(text,max){
   if(b)out.push(b);return out;
 }
 function buildChunks(bid,text,max){
+  const lines=text.replace(/\r/g,"").split("\n").filter(l=>!NOISE.test(l));
   const chs=[];let cur={t:"Mở đầu",b:[]};
-  for(const l of text.replace(/\r/g,"").split("\n")){
-    if(l.trim().length<120&&CH.test(l)){if(cur.b.join("").trim())chs.push(cur);cur={t:l.trim(),b:[]}}else cur.b.push(l);
+  for(const l of lines){
+    if(l.trim().length<120&&CH.test(l)){chs.push(cur);cur={t:l.trim(),b:[]}}else cur.b.push(l);
   }
-  if(cur.b.join("").trim())chs.push(cur);
+  chs.push(cur);
+  const len=c=>c.b.join("").trim().length,named=chs.filter(c=>c.t!=="Mở đầu");
+  let use,drop=0;
+  if(!named.length)use=chs.filter(c=>len(c)>0);
+  else{
+    let st=named.findIndex(c=>C1.test(c.t)&&len(c)>=60);
+    if(st<0)st=named.findIndex(c=>len(c)>=60);
+    if(st<0)st=0;
+    use=named.slice(st);
+    drop=chs.filter(c=>!use.includes(c)).reduce((n,c)=>n+len(c)+c.t.length,0);
+  }
   const out=[];let idx=0;
-  chs.forEach((c,ci)=>splitText(c.b.join("\n"),max).forEach(s=>out.push({id:bid+":"+String(idx).padStart(6,"0"),bookId:bid,idx:idx++,ch:ci,title:c.t,src:s,tr:""})));
-  return out;
+  use.forEach((c,ci)=>splitText(c.b.join("\n"),max).forEach(s=>out.push({id:bid+":"+String(idx).padStart(6,"0"),bookId:bid,idx:idx++,ch:ci,title:c.t,src:s,tr:""})));
+  return{out,drop};
 }
 const parseGl=t=>t.split("\n").map(l=>l.split("=")).filter(a=>a.length>=2&&a[0].trim()).map(a=>[a[0].trim(),a.slice(1).join("=").trim()]);
 /* ---------- AI ---------- */
@@ -162,13 +175,22 @@ async function ask(sys,user){
   }
   throw new Error("Máy chủ liên tục báo lỗi.");
 }
+function charBlock(low){
+  const t=(book.chars||"").trim();if(!t)return[];
+  let use=t;
+  if(t.length>5000){
+    const L=t.split("\n").filter(x=>x.trim());
+    use=L.filter((l,i)=>i<3||l.split(/[|:：=\t,，、/()（）\-–—]+/).map(x=>x.trim().toLowerCase()).some(x=>x.length>=2&&x.length<=40&&low.includes(x))).join("\n").slice(0,5000);
+  }
+  return["Character and relationship table (authoritative; always keep names, gender, pronouns, forms of address and relationships consistent with it across all chapters):\n"+use];
+}
 async function translateChunk(c){
   const st=styles.find(s=>s.id===book.styleId)||styles[0],low=c.src.toLowerCase();
   const g=parseGl(book.gl).filter(([a])=>low.includes(a.toLowerCase()));
   const sys=["You are a professional literary translator working on fiction.",
     `Translate from ${book.sl&&book.sl!=="Tự nhận diện"?book.sl:"the source language (detect it automatically)"} into ${book.tl}.`,
-    "Style guide from the reader:\n"+(st?st.prompt:""),
-    "Rules: keep paragraph structure and line breaks; keep dialogue as dialogue; never summarize, omit or add content; use glossary terms exactly; keep names consistent.",
+    "Style guide from the reader:\n"+(st?st.prompt:""),...charBlock(low),
+    "Rules: keep paragraph structure and line breaks; keep dialogue as dialogue; never summarize, omit or add content; use glossary terms exactly; keep names consistent; follow the character table (if given) for names, gender, pronouns, forms of address and relationships.",
     cfg.extract?"Output format: first the translation only, with no notes. Then on a new line exactly ===TERMS=== followed by a JSON array of NEW proper nouns (character names, places, organizations, techniques, items, titles) found in this passage and missing from the glossary, as [{\"s\":\"source\",\"t\":\"your translation\"}]. Use [] if none.":"Output ONLY the translation, with no notes or commentary."].join("\n");
   let user="";
   if(g.length)user+="Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n";
@@ -189,7 +211,9 @@ function addTerms(ts){
   for(const t of ts){const s=String(t.s||"").trim(),v=String(t.t||"").trim();if(s&&v&&!have.has(s.toLowerCase())){book.pending.push({s,t:v});have.add(s.toLowerCase())}}
 }
 /* ---------- Run ---------- */
-const sync=()=>{book.done=chunks.filter(c=>c.tr).length;book.total=chunks.length};
+const isSkip=c=>c.title==="Mở đầu"&&chunks.some(x=>x.title!=="Mở đầu");
+const active=()=>chunks.filter(c=>!isSkip(c));
+const sync=()=>{const A=active();book.done=A.filter(c=>c.tr).length;book.total=A.length};
 const say=(t,e)=>{const s=$("status");if(s){s.textContent=t;s.className=e?"e":""}else if(t)alert(t)};
 let wl=null;
 async function lock(){try{if(navigator.wakeLock&&!wl)wl=await navigator.wakeLock.request("screen");if(wl)wl.addEventListener("release",()=>{wl=null})}catch(e){wl=null}}
@@ -201,7 +225,7 @@ async function run(){
   running=true;abort=new AbortController();lock();renderAll();
   try{
     for(const c of chunks){
-      if(c.tr)continue;
+      if(c.tr||isSkip(c))continue;
       if(cfg.cap>0&&usage().n>=cfg.cap){say(`Đã dùng đủ ${cfg.cap} lượt hôm nay. Tiến độ đã lưu, hãy quay lại vào ngày mai.`);break}
       say(`Đang dịch đoạn ${c.idx+1}/${chunks.length}…`);
       const r=await translateChunk(c);
@@ -210,7 +234,7 @@ async function run(){
       sync();book.updated=Date.now();await put("books",book);bump();renderAll();
       await sleep(Math.max(0,cfg.delay)*1000,abort.signal);
     }
-    if(chunks.every(c=>c.tr))say("Hoàn tất toàn bộ truyện.");
+    if(active().every(c=>c.tr))say("Hoàn tất toàn bộ truyện.");
   }catch(e){
     if(e.name==="AbortError")say("Đã dừng. Tiến độ đã lưu.");
     else if(e.quota)say("Có vẻ đã hết hạn mức của key. Tiến độ đã lưu, hãy bấm Dịch tiếp sau khi hạn mức được làm mới.",1);
@@ -238,7 +262,7 @@ function zip(files){
 }
 const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const chapters=(cs=chunks)=>{const m=new Map();for(const c of cs){if(!m.has(c.ch))m.set(c.ch,{title:c.title,cs:[]});if(c.titleTr)m.get(c.ch).title=c.titleTr;m.get(c.ch).cs.push(c)}return[...m.values()]};
-const doneChs=(cs=chunks)=>chapters(cs).filter(x=>x.cs.every(c=>c.tr));
+const doneChs=(cs=chunks)=>{const all=chapters(cs),multi=all.length>1;return all.filter(x=>x.cs.every(c=>c.tr)&&!(multi&&x.cs[0].title==="Mở đầu"))};
 function save(blob,name){const a=el("a",{href:URL.createObjectURL(blob),download:name});a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
 function exportEpub(b=book,cs=chunks){
   const ds=doneChs(cs);if(!ds.length){say("Chưa có chương nào dịch xong để xuất.",1);return}
@@ -280,6 +304,7 @@ function renderLib(){
   const group=(t,list)=>{if(!list.length)return;L.append(el("h2",{textContent:`${t} (${list.length})`,style:"margin-top:8px"}));
     list.forEach(b=>L.append(el("div",{cls:"it"},
       el("button",{cls:"bk"+(book&&book.id===b.id?" on":""),on:{click:()=>openBook(b.id)}},b.title,el("small",{textContent:(b.done||0)+"/"+(b.total||0)+" đoạn"})),
+      el("button",{textContent:"Sửa",title:"Đổi tên truyện",on:{click:async()=>{const v=prompt("Tên truyện:",b.title);if(v&&v.trim()){b.title=v.trim();await put("books",b);renderAll()}}}}),
       el("button",{textContent:"EPUB",title:"Xuất EPUB các chương đã dịch xong",on:{click:()=>epubOf(b)}}))))};
   group("Đang dịch",sorted.filter(b=>!isDone(b)));group("Đã dịch xong",sorted.filter(isDone));
   if(books.some(isDone))L.append(el("button",{textContent:"Clear: xoá truyện đã dịch xong",on:{click:clearDone}}));
@@ -288,16 +313,27 @@ function renderAll(){
   if(book)sync();
   renderLib();renderWs();
 }
+function charsSection(){
+  const note=el("p",{cls:"hint"});
+  const upd=()=>{const n=(book.chars||"").length;note.textContent=n?`Bảng nhân vật: ${n} ký tự${n>5000?" (quá 5.000 ký tự nên mỗi lượt chỉ gửi các dòng có tên xuất hiện trong đoạn đang dịch)":", gửi kèm mọi lượt dịch"}.`:"Chưa có bảng nhân vật. Dán bảng lấy từ ChatGPT vào đây để giữ xưng hô và quan hệ xuyên suốt các chương."};
+  const ta=el("textarea",{value:book.chars||"",style:"min-height:150px",placeholder:"Tên gốc | Tên dịch | Giới tính | Vai trò | Xưng hô với từng nhân vật khác | Quan hệ\nVí dụ: 林风 | Lâm Phong | Nam | Nhân vật chính | Với Tô Nhi: ta - nàng | Sư huynh của Tô Nhi",on:{change:async e=>{book.chars=e.target.value;await put("books",book);upd()}}});
+  const fi=el("input",{type:"file",accept:".txt,text/plain",hidden:true,on:{change:async e=>{const f=e.target.files[0];if(!f)return;ta.value=await f.text();book.chars=ta.value;await put("books",book);upd();e.target.value=""}}});
+  const pt=`Hãy đọc toàn bộ truyện tôi gửi và lập BẢNG NHÂN VẬT, mỗi nhân vật một dòng theo định dạng: Tên gốc | Tên dịch sang ${book.tl} | Giới tính | Vai trò, tuổi, địa vị | Cách xưng hô khi nói với từng nhân vật quan trọng khác (ví dụ: với A: ta - ngươi; với B: anh - em) | Quan hệ (gia đình, sư môn, kẻ thù, người yêu...). Cuối bảng thêm vài dòng ghi chú quy tắc xưng hô chung. Chỉ xuất bảng, không giải thích.`;
+  upd();
+  return el("section",{},el("h2",{textContent:"Bảng nhân vật và quan hệ"}),ta,
+    el("div",{cls:"row",style:"margin-top:8px"},el("button",{textContent:"Mở file .txt",on:{click:()=>fi.click()}}),
+      el("button",{textContent:"Sao chép prompt cho ChatGPT",on:{click:async()=>{try{await navigator.clipboard.writeText(pt);say("Đã sao chép prompt.")}catch(e){say("Không sao chép được.",1)}}}})),fi,note);
+}
 function renderWs(){
   const ws=$("ws");ws.textContent="";
   if(!book){ws.append(el("section",{},el("p",{cls:"hint",textContent:"Chọn một truyện trong thư viện hoặc thêm truyện mới."})));return}
-  const chs=chapters(),done=chunks.filter(c=>c.tr).length,pct=chunks.length?done/chunks.length*100:0;
+  const chs=chapters(),A=active(),done=A.filter(c=>c.tr).length,pct=A.length?done/A.length*100:0;
   const sel=el("select",{disabled:running,on:{change:async e=>{book.styleId=e.target.value;await put("books",book)}}});
   styles.forEach(s=>sel.append(el("option",{value:s.id,textContent:s.name,selected:s.id===book.styleId})));
   const mk=(id,l,fn,cls)=>el("button",{id,cls,textContent:l,on:{click:fn}});
-  const head=el("section",{},el("h2",{textContent:book.title}),
+  const head=el("section",{},el("input",{value:book.title,"aria-label":"Tên truyện",style:"font:600 17px Georgia,serif;margin-bottom:6px",on:{change:async e=>{const v=e.target.value.trim();if(!v){e.target.value=book.title;return}book.title=v;await put("books",book);renderLib()}}}),
     el("div",{cls:"bar"},el("i",{style:"width:"+pct+"%"})),
-    el("p",{cls:"hint",textContent:`Đã dịch ${done}/${chunks.length} đoạn, ${doneChs().length}/${chs.length} chương.`}),
+    el("p",{cls:"hint",textContent:`Đã dịch ${done}/${A.length} đoạn, ${doneChs().length}/${chs.length} chương.`}),
     el("div",{cls:"row",style:"margin:10px 0"},
       running?mk("stop","Dừng",()=>abort.abort()):mk("go",done?"Dịch tiếp":"Bắt đầu dịch",run,"p"),
       mk("epub","Xuất EPUB (chương đã xong)",()=>exportEpub()),mk("txt","Xuất .txt",exportTxt),
@@ -317,6 +353,7 @@ function renderWs(){
     p.append(el("button",{cls:"p",textContent:"Duyệt tất cả",on:{click:async()=>{for(const t of [...book.pending])await approve(t);renderWs()}}}));
     ws.append(p);
   }
+  ws.append(charsSection());
   ws.append(el("section",{},el("h2",{textContent:"Bảng thuật ngữ của truyện"}),
     el("textarea",{value:book.gl,placeholder:"Mỗi dòng: Gốc = Dịch",style:"min-height:110px",on:{change:async e=>{book.gl=e.target.value;await put("books",book)}}})));
   if(curCh>=chs.length)curCh=0;
@@ -329,7 +366,7 @@ function renderWs(){
 }
 async function openBook(id){
   if(running){say("Hãy dừng lượt dịch hiện tại trước khi chuyển truyện.",1);return}
-  book=books.find(b=>b.id===id);
+  book=books.find(b=>b.id===id);book.pending=book.pending||[];book.chars=book.chars||"";
   chunks=(await tx("chunks","readonly",s=>s.index("book").getAll(id))).sort((a,b)=>a.idx-b.idx);
   curCh=0;const first=chunks.find(c=>!c.tr);if(first)curCh=first.ch;
   renderAll();
@@ -355,11 +392,11 @@ $("nOpen").onclick=()=>$("nFile").click();
 $("nFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;$("nText").value=await f.text();if(!$("nTitle").value)$("nTitle").value=f.name.replace(/\.txt$/i,"");e.target.value=""};
 $("nGo").onclick=async()=>{
   const text=$("nText").value;if(!text.trim()||!$("nTitle").value.trim()){alert("Hãy nhập tên truyện và văn bản.");return}
-  const id="b"+Date.now(),cs=buildChunks(id,text,cfg.max||3000);
-  const b={id,title:$("nTitle").value.trim(),sl:$("nSl").value,tl:$("nTl").value,styleId:styles[0].id,gl:"",pending:[],updated:Date.now(),done:0,total:cs.length};
+  const id="b"+Date.now(),bc=buildChunks(id,text,cfg.max||3000),cs=bc.out;
+  const b={id,title:$("nTitle").value.trim(),sl:$("nSl").value,tl:$("nTl").value,styleId:styles[0].id,gl:"",chars:"",pending:[],updated:Date.now(),done:0,total:cs.length};
   await put("books",b);await tx("chunks","readwrite",s=>cs.forEach(v=>s.put(v)));
   books.push(b);$("nText").value="";$("nTitle").value="";await openBook(id);
-  say(`Đã tạo truyện: ${new Set(cs.map(c=>c.ch)).size} chương, ${cs.length} đoạn.`);
+  say(`Đã tạo truyện: ${new Set(cs.map(c=>c.ch)).size} chương, ${cs.length} đoạn.`+(bc.drop?` Đã bỏ qua ${bc.drop} ký tự trước Chương 1 (giới thiệu, mục lục...).`:""));
 };
 /* ---------- Keys ---------- */
 const setKeys=a=>{cfg.key=[...new Set(a)].join(";");saveCfg();renderKeys()};
