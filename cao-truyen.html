@@ -198,7 +198,20 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));
   ['t1','t2','t3'].forEach(id=>$('#'+id).hidden=id!==b.dataset.t);
 });
-$('#proxy').onchange=e=>$('#customProxy').hidden=e.target.value!=='custom';
+/* Lưu lựa chọn proxy: tự nạp lại mỗi lần mở, không phải nhập lại sau khi cập nhật code */
+const PX_KEY='cao-truyen:proxy';
+const DEFAULT_PX='https://truyen-proxy.tuan-vna.workers.dev/?url={url}';
+function pxLoad(){let o=null;try{o=JSON.parse(localStorage.getItem(PX_KEY)||'null')}catch(e){}
+  if(!o)o={sel:'custom',custom:DEFAULT_PX};
+  if(!o.custom)o.custom=DEFAULT_PX;
+  if([...$('#proxy').options].some(x=>x.value===o.sel))$('#proxy').value=o.sel;
+  $('#customProxy').value=o.custom;
+  $('#customProxy').hidden=$('#proxy').value!=='custom';}
+function pxSave(){try{localStorage.setItem(PX_KEY,JSON.stringify({sel:$('#proxy').value,custom:$('#customProxy').value.trim()}))}catch(e){}}
+pxLoad();
+$('#proxy').onchange=e=>{$('#customProxy').hidden=e.target.value!=='custom';pxSave()};
+$('#customProxy').addEventListener('change',pxSave);
+$('#customProxy').addEventListener('input',()=>{clearTimeout(window._pxT);window._pxT=setTimeout(pxSave,400)});
 
 /* ---------- Mã hóa & tải trang ---------- */
 function decode(buf,forced){
