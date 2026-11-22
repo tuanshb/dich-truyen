@@ -47,6 +47,14 @@ body.bi .sr{display:block}
 #tabSc{max-width:1350px;margin:12px auto 0;padding:0 20px 16px}
 #scFrame{display:block;width:100%;height:calc(100dvh - 140px);min-height:480px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .it .sm{padding:8px 9px;font-size:13px}.it .sm.d{color:var(--err)}
+.hl-wrap{position:relative}
+.hl-wrap textarea{position:relative;z-index:1;background:transparent;width:100%}
+.hl-mirror{position:absolute;inset:0;z-index:0;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;margin:0;padding:8px 10px;border:1px solid transparent;border-radius:6px;background:var(--bg);color:transparent;pointer-events:none;font:inherit;box-sizing:border-box}
+.hl-mirror .hz{background:rgba(255,213,74,.7);border-radius:3px;color:transparent}
+.fs{position:fixed;inset:0;z-index:50;background:var(--bg);padding:12px;display:flex;flex-direction:column;gap:8px;padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+.fs-h{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.fs .hl-wrap{flex:1;min-height:0;display:flex}
+.fs .hl-wrap textarea{flex:1;height:100%;resize:none}
 </style>
 </head>
 <body>
@@ -245,9 +253,7 @@ const active=()=>chunks.filter(c=>!isSkip(c));
 const sync=()=>{const A=active();book.done=A.filter(c=>c.tr).length;book.total=A.length};
 const say=(t,e)=>{const s=$("status");if(s){s.textContent=t;s.className=e?"e":""}else if(t)alert(t)};
 let wl=null;
-async function lock(){try{if(navigator.wakeLock&&!wl)wl=await navigator.wakeLock.request("screen");if(wl)wl.addEventListener("release",()=>{wl=null})}catch(e){wl=null}}
 function unlock(){try{wl&&wl.release()}catch(e){}wl=null}
-document.addEventListener("visibilitychange",()=>{if(running&&document.visibilityState==="visible")lock()});
 async function run(){
   if(running||!book)return;
   if(!keys().length||!cfg.model.trim()){say("Hãy nhập API key và model ở mục Kết nối AI.",1);return}
@@ -555,6 +561,49 @@ function charsFor(t,low){
   t=(t||"").trim();if(t.length<=5000)return t;
   return t.split("\n").filter(x=>x.trim()).filter((l,i)=>i<3||l.split(/[|:：=\t,，、/()（）\-–—]+/).map(x=>x.trim().toLowerCase()).some(x=>x.length>=2&&x.length<=40&&low.includes(x))).join("\n").slice(0,5000);
 }
+/* ---------- Giữ màn hình sáng, tô màu chữ Trung, chỉnh tay toàn màn hình ---------- */
+const keepOn=()=>{try{return localStorage.getItem("dichtruyen:keep")!=="0"}catch(e){return true}};
+const wlSupported=()=>"wakeLock" in navigator;
+async function lock(){if(!keepOn()||!wlSupported()||wl)return;try{wl=await navigator.wakeLock.request("screen");wl.addEventListener("release",()=>{wl=null})}catch(e){wl=null}}
+document.addEventListener("visibilitychange",()=>{if((running||edRunning)&&document.visibilityState==="visible")lock()});
+const HZRE=/[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff01-\uff65]+/g;
+const hlHtml=t=>esc(t).replace(HZRE,m=>`<span class="hz">${m}</span>`)+"\n";
+function hlArea(value,opts){
+  const ta=el("textarea",{value:value||"",style:opts.style||""});
+  const mir=el("div",{cls:"hl-mirror",innerHTML:hlHtml(value||"")});
+  ta.addEventListener("scroll",()=>{mir.scrollTop=ta.scrollTop});
+  ta.addEventListener("input",()=>{mir.innerHTML=hlHtml(ta.value);if(opts.onInput)opts.onInput(ta.value)});
+  ta.addEventListener("change",()=>{if(opts.onChange)opts.onChange(ta.value)});
+  return el("div",{cls:"hl-wrap"},mir,ta);
+}
+const KP=x=>x.fixed?"Đã khắc phục":"Chưa khắc phục";
+const ND=x=>typeof x==="string"?{desc:x,fixed:false}:x;
+function repLines(rep){
+  return [...rep.miss.map(ND).map(x=>"Thiếu: "+x.desc+" → "+KP(x)),
+          ...(rep.extra||[]).map(ND).map(x=>"Thừa: "+x.desc+" → "+KP(x)),
+          ...rep.wrong.map(ND).map(x=>"Sai: "+x.desc+" → "+KP(x))];
+}
+function openFs(r){
+  let ov;
+  const ta=hlArea(r.out||"",{onInput:v=>{r.out=v}});
+  const closeAndSave=async()=>{await put("edch",r);ov.remove();renderEd();renderEdLib()};
+  ov=el("div",{cls:"fs"},
+    el("div",{cls:"fs-h"},el("strong",{textContent:`Chỉnh tay · chương ${r.idx+1}${r.trTitle?": "+r.trTitle:""}`}),
+      el("span",{cls:"hint",textContent:"Chữ Trung được tô vàng."}),
+      el("button",{textContent:"Đóng",on:{click:closeAndSave}}),
+      el("button",{cls:"p",textContent:"Xác nhận đã chỉnh sửa",on:{click:async()=>{r.manual=true;await closeAndSave()}}})),
+    ta);
+  document.body.append(ov);
+}
+function keepRow(){
+  const sup=wlSupported();
+  return el("div",{},
+    el("label",{cls:"chk"},el("input",{type:"checkbox",checked:keepOn(),on:{change:e=>{
+      try{localStorage.setItem("dichtruyen:keep",e.target.checked?"1":"0")}catch(x){}
+      if(e.target.checked){if(edRunning)lock()}else unlock();
+      renderEd();}}})," Giữ màn hình sáng khi biên tập"),
+    el("p",{cls:"hint",textContent:sup?(wl?"Đang giữ màn hình sáng.":"Sẽ giữ màn hình sáng khi bắt đầu chạy."):"Trình duyệt này không hỗ trợ giữ màn hình sáng. Hãy tăng thời gian tự khoá màn hình trong Cài đặt và giữ app mở."}));
+}
 /* ---------- Biên tập: Bước 1 (bản dịch) và Bước 2 (so sánh bản gốc) ---------- */
 const CJK1=/[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff01-\uff65]/;
 const CJKG=/[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff01-\uff65]/g;
@@ -566,9 +615,9 @@ function finalize(r){
   const w=[];
   if(r.lenWarn!=null)w.push("Độ dài bản sửa còn "+r.lenWarn+"% so với bản cũ, hãy xem kỹ.");
   if(r.han>0)w.push("Còn "+r.han+" ký tự Trung sau khi xử lý.");
-  r.warns=w;r.status=w.length?"warn":"ok";r.accept=true;
+  r.warns=w;r.status=w.length?"warn":"ok";r.accept=true;r.manual=false;
 }
-const bdg=r=>r.status==="warn"?"Cần xem lại":(r.s2===true||r.s2==="skip")?"Đã xử lý đủ":r.s1?"Xong bước 1":"Chưa xử lý";
+const bdg=r=>r.manual?"Đã chỉnh sửa":r.status==="warn"?"Cần xem lại":(r.s2===true||r.s2==="skip")?"Đã xử lý đủ":r.s1?"Xong bước 1":"Chưa xử lý";
 
 async function editPiece(pc,mdl){
   const o=ed.opts,low=pc.toLowerCase();
@@ -600,10 +649,10 @@ async function comparePiece(pc,seg,mdl){
   const g=parseGl(ed.gl).filter(([a,b])=>low.includes(a.toLowerCase())||(b&&low.includes(b.toLowerCase())));
   const st=styles.find(s=>s.id===ed.styleId);
   const sys=[`You are an editor checking a translation into ${ed.tl} against its source (${ed.sl}).`,
-    "Do these in order:\n1. Find source content that is missing from the translation. Translate it into the target language, in the same voice, and INSERT it at the right place. Add nothing that is not in the source.\n2. Fix mistranslated meaning. Use the glossary and character table for names, terms and forms of address.\n3. Keep every other wording unchanged. The output must contain no Chinese characters.",
+    "Do these in order:\n1. Find source content that is missing from the translation. Translate it into the target language, in the same voice, and INSERT it at the right place. Add nothing that is not in the source.\n2. Fix mistranslated meaning. Use the glossary and character table for names, terms and forms of address.\n3. Remove text that is in the translation but not in the source (extra text). Keep every other wording unchanged. The output must contain no Chinese characters.",
     ...(st?["Keep the voice of this style guide:\n"+st.prompt]:[]),
     ...(ed.extra.trim()?["Extra instructions from the reader: "+ed.extra.trim()]:[]),
-    "Output format: the COMPLETE revised translation (one paragraph per line), then on a new line exactly ===REPORT=== followed by one JSON object only, with no other text: {\"coverage\": <integer 0-100, percent of the source content present in the translation>, \"missing\": [<short Vietnamese description of each missing point>], \"wrong\": [<short Vietnamese description of each mistranslation you fixed>]}"].join("\n");
+    "Output format: the COMPLETE revised translation (one paragraph per line), then on a new line exactly ===REPORT=== followed by one JSON object only, with no other text: {\"coverage\": <integer 0-100, percent of the source content present in the translation>, \"missing\": [{\"desc\": <short Vietnamese description>, \"fixed\": <true if you inserted it, else false>}], \"wrong\": [{\"desc\": <short Vietnamese description>, \"fixed\": <true if you corrected it>}], \"extra\": [{\"desc\": <short Vietnamese description>, \"fixed\": <true if you removed it>}]}"].join("\n");
   let u="";
   if(g.length)u+="Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n";
   const cb=charsFor(ed.chars,low);if(cb)u+="Character table:\n"+cb+"\n\n";
@@ -612,9 +661,9 @@ async function comparePiece(pc,seg,mdl){
   let text=raw,rep=null;const i=raw.indexOf("===REPORT===");
   if(i>=0){const m=raw.slice(i+12).match(/\{[\s\S]*\}/);if(m){try{rep=JSON.parse(m[0])}catch(e){}}text=raw.slice(0,i)}
   text=text.replace(/^\s*<translation>\s*/i,"").replace(/\s*<\/translation>\s*$/i,"").trim();
-  const arr=v=>Array.isArray(v)?v.map(String).filter(Boolean):[];
+  const arr=v=>Array.isArray(v)?v.map(x=>typeof x==="string"?{desc:x.trim(),fixed:false}:{desc:String((x&&(x.desc||x.text||x.item))||"").trim(),fixed:!!x&&(x.fixed===true||x.fixed==="true")}).filter(x=>x.desc):[];
   const cov=rep&&Number.isFinite(+rep.coverage)?Math.max(0,Math.min(100,+rep.coverage)):null;
-  return{text,cov,miss:arr(rep&&rep.missing),wrong:arr(rep&&rep.wrong)};
+  return{text,cov,miss:arr(rep&&rep.missing),wrong:arr(rep&&rep.wrong),extra:arr(rep&&rep.extra)};
 }
 
 /* Dịch lại riêng các dòng còn chữ Trung. Chỉ gửi những dòng đó nên rất tiết kiệm token. */
@@ -655,16 +704,16 @@ async function step1(r,mdl){
 
 async function step2(r,mdl){
   const T=r.out||r.tr,R=r.raw,rl=R.length,single=T.length+rl<=14000;
-  const pcs=single?[T]:splitText(T,4500);let acc=0;const outs=[],covs=[],miss=[],wrong=[];
+  const pcs=single?[T]:splitText(T,4500);let acc=0;const outs=[],covs=[],miss=[],wrong=[],extra=[];
   for(const pc of pcs){
     const seg=single?R:R.slice(Math.max(0,Math.floor((acc/T.length-.12)*rl)),Math.min(rl,Math.ceil(((acc+pc.length)/T.length+.12)*rl)));
     acc+=pc.length;
     const x=await comparePiece(pc,seg,mdl);
-    outs.push(x.text);if(x.cov!=null)covs.push(x.cov);miss.push(...x.miss);wrong.push(...x.wrong);
+    outs.push(x.text);if(x.cov!=null)covs.push(x.cov);miss.push(...x.miss);wrong.push(...x.wrong);extra.push(...x.extra);
   }
   const out=await repairHan(fixPunct(outs.join("\n").trim()),mdl);
   const cov=covs.length?Math.round(covs.reduce((a,b)=>a+b,0)/covs.length):null;
-  r.out=out;r.rep={cov,miss,wrong,rawLen:rl};r.han=hanCount(out);r.lenWarn=lenPct(r.tr,out);
+  r.out=out;r.rep={cov,miss,wrong,extra,rawLen:rl};r.han=hanCount(out);r.lenWarn=lenPct(r.tr,out);
   finalize(r);
 }
 
@@ -750,8 +799,8 @@ function reportData(){
   const W=cmp.reduce((a,r)=>a+r.rep.rawLen,0);
   const wcov=W?cmp.reduce((a,r)=>a+r.rep.cov*r.rep.rawLen,0)/W:null;
   const flagged=rows.filter(r=>r.s1).map(r=>{
-    const m=r.rep?r.rep.miss.length:0,w=r.rep?r.rep.wrong.length:0,cov=r.rep?r.rep.cov:null;
-    return{r,m,w,cov,sev:m*2+w+Math.ceil((r.han||0)/10)+(cov!=null&&cov<90?3:0)+(r.status==="warn"?1:0)};
+    const m=r.rep?r.rep.miss.length:0,w=r.rep?r.rep.wrong.length:0,ex=r.rep?(r.rep.extra||[]).length:0,cov=r.rep?r.rep.cov:null;
+    return{r,m,w,ex,cov,sev:m*2+w+ex+Math.ceil((r.han||0)/10)+(cov!=null&&cov<90?3:0)+(r.status==="warn"?1:0)};
   }).filter(x=>x.sev>0).sort((a,b)=>b.sev-a.sev);
   return{n,withRaw,s1,cmpN:cmp.length,missPct:wcov==null?null:100-wcov,
     han1:rows.reduce((a,r)=>a+(r.han1||0),0),han:rows.reduce((a,r)=>a+(r.han||0),0),
@@ -770,7 +819,7 @@ function reportText(){
   if(!d.flagged.length)L.push("(không có)");
   d.flagged.forEach(x=>{
     L.push(`- Chương ${x.r.idx+1}: ${x.r.trTitle||""} | độ bao phủ ${x.cov==null?"chưa so sánh":x.cov+"%"} | ý thiếu ${x.m} | ý sai ${x.w} | Trung còn sót ${x.r.han||0}`);
-    if(x.r.rep){x.r.rep.miss.forEach(s=>L.push("    Thiếu: "+s));x.r.rep.wrong.forEach(s=>L.push("    Sai đã sửa: "+s))}
+    if(x.r.rep)repLines(x.r.rep).forEach(s=>L.push("    "+s));
     (x.r.warns||[]).forEach(s=>L.push("    ⚠ "+s));
   });
   return L.join("\n");
@@ -808,7 +857,7 @@ function renderEd(){
     el("div",{cls:"row",style:"margin:10px 0"},
       ...stepBtns(1),...stepBtns(2),el("button",{disabled:edRunning,textContent:"Chạy tự động cả hai bước",on:{click:()=>runEd(0)}}),
       el("button",{textContent:"Xuất EPUB",on:{click:edEpub}}),el("button",{textContent:"Xuất .txt",on:{click:edTxt}})),
-    el("div",{id:"edStatus",role:"status"}));
+    el("div",{id:"edStatus",role:"status"}),keepRow());
   const ck=(k,l)=>el("label",{cls:"chk"},el("input",{type:"checkbox",checked:o[k],disabled:dis,on:{change:async e=>{o[k]=e.target.checked;await edSave()}}})," "+l);
   const ss=el("select",{disabled:dis,on:{change:async e=>{ed.styleId=e.target.value;await edSave()}}},el("option",{value:"",textContent:"(Không dùng văn phong)"}));
   styles.forEach(s=>ss.append(el("option",{value:s.id,textContent:s.name,selected:s.id===ed.styleId})));
@@ -832,8 +881,8 @@ function renderEd(){
       const d=el("div",{style:"margin:4px 0 12px"});
       if(r.out){
         d.append(el("label",{cls:"chk"},el("input",{type:"checkbox",checked:r.accept,on:{change:async e=>{r.accept=e.target.checked;await put("edch",r)}}})," Dùng bản đã sửa khi xuất file"));
-        if(r.warns&&r.warns.length)d.append(el("pre",{cls:"nt",textContent:"⚠ "+r.warns.join("\n⚠ ")}));if(r.rep)d.append(el("pre",{cls:"nt",textContent:"Độ bao phủ "+(r.rep.cov==null?"n/a":r.rep.cov+"%")+"\n"+([...r.rep.miss.map(x=>"Thiếu: "+x),...r.rep.wrong.map(x=>"Sai đã sửa: "+x)].join("\n")||"Không có ý thiếu hoặc sai.")}));if(r.notes)d.append(el("pre",{cls:"nt",textContent:r.notes}));
-        d.append(el("label",{textContent:"Bản đã sửa (có thể chỉnh tay)"}),el("textarea",{value:r.out,style:"min-height:180px",on:{change:async e=>{r.out=e.target.value;await put("edch",r)}}}));
+        if(r.warns&&r.warns.length)d.append(el("pre",{cls:"nt",textContent:"⚠ "+r.warns.join("\n⚠ ")}));if(r.rep)d.append(el("pre",{cls:"nt",textContent:"Độ bao phủ "+(r.rep.cov==null?"n/a":r.rep.cov+"%")+"\n"+(repLines(r.rep).join("\n")||"Không có ý thiếu, thừa hoặc sai.")}));if(r.notes)d.append(el("pre",{cls:"nt",textContent:r.notes}));
+        d.append(el("div",{cls:"row",style:"align-items:center"},el("label",{textContent:"Bản đã sửa (có thể chỉnh tay)"}),el("button",{textContent:"Mở toàn màn hình",on:{click:()=>openFs(r)}})),hlArea(r.out,{style:"min-height:180px",onChange:async v=>{r.out=v;await put("edch",r)}}));
       }
       d.append(el("label",{textContent:"Bản dịch hiện có"}),el("textarea",{value:r.tr,readOnly:true,style:"min-height:120px"}));
       if(r.raw)d.append(el("label",{textContent:"Bản gốc"}),el("textarea",{value:r.raw,readOnly:true,style:"min-height:120px"}));
