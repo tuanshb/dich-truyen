@@ -299,17 +299,35 @@ const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const chapters=(cs=chunks)=>{const m=new Map();for(const c of cs){if(!m.has(c.ch))m.set(c.ch,{title:c.title,cs:[]});if(c.titleTr)m.get(c.ch).title=c.titleTr;m.get(c.ch).cs.push(c)}return[...m.values()]};
 const doneChs=(cs=chunks)=>{const all=chapters(cs),multi=all.length>1;return all.filter(x=>x.cs.every(c=>c.tr)&&!(multi&&x.cs[0].title==="Mở đầu"))};
 function save(blob,name){const a=el("a",{href:URL.createObjectURL(blob),download:name});a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+/* EPUB 3 có mục lục (nav + NCX), trang bìa tên truyện, CSS căn đều hai bên lề, mỗi chương bắt đầu một trang mới */
+const EPUB_CSS=`html,body{margin:0;padding:0}
+body{font-family:Georgia,"Times New Roman",serif;line-height:1.75;color:#1a1a1a;margin:0 5%;text-align:justify;text-justify:inter-word;hyphens:auto;-webkit-hyphens:auto}
+h1.title{font-size:2em;text-align:center;margin:30% 0 .6em;line-height:1.3;font-weight:bold}
+p.sub{text-align:center;text-indent:0;margin:0 0 .4em;color:#555}
+h2.chap{font-size:1.35em;text-align:center;margin:1.4em 0 1.6em;line-height:1.35;font-weight:bold;page-break-before:always;break-before:page;text-align-last:center}
+h2.chap+p{text-indent:0}
+p{margin:0 0 .65em;text-indent:2em;orphans:2;widows:2}
+nav ol{list-style:none;padding-left:0;margin:0}
+nav ol ol{padding-left:1.4em}
+nav li{margin:.45em 0;text-align:left}
+h1.toc{text-align:center;font-size:1.6em;margin:1em 0 1em}`;
 function epubFrom(title,tl,chs){
   const lang=/việt/i.test(tl)?"vi":"en",uid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now());
-  const xh=(t,x)=>`<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}"><head><title>${esc(t)}</title></head><body>${x}</body></html>`;
+  const iso=new Date().toISOString().slice(0,19)+"Z",n=chs.length;
+  const X=(body,ttl,extraHead="")=>`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="${lang}" lang="${lang}">\n<head><meta charset="utf-8"/><title>${esc(ttl)}</title><link rel="stylesheet" type="text/css" href="style.css"/>${extraHead}</head>\n<body>${body}</body>\n</html>`;
+  const paras=t=>t.split(/\n+/).map(s=>s.trim()).filter(Boolean).map(p=>`<p>${esc(p)}</p>`).join("");
   const files=[{n:"mimetype",d:"application/epub+zip"},
-    {n:"META-INF/container.xml",d:`<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`}];
-  const man=[],spine=[],nav=[];
-  chs.forEach((c,i)=>{const f=`c${i+1}.xhtml`;
-    files.push({n:"OEBPS/"+f,d:xh(c.title,`<h2>${esc(c.title)}</h2>`+c.text.split(/\n+/).filter(Boolean).map(p=>`<p>${esc(p)}</p>`).join(""))});
-    man.push(`<item id="c${i+1}" href="${f}" media-type="application/xhtml+xml"/>`);spine.push(`<itemref idref="c${i+1}"/>`);nav.push(`<li><a href="${f}">${esc(c.title)}</a></li>`)});
-  files.push({n:"OEBPS/nav.xhtml",d:`<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Mục lục</title></head><body><nav epub:type="toc"><h1>Mục lục</h1><ol>${nav.join("")}</ol></nav></body></html>`});
-  files.push({n:"OEBPS/content.opf",d:`<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">urn:uuid:${uid}</dc:identifier><dc:title>${esc(title)}</dc:title><dc:language>${lang}</dc:language><meta property="dcterms:modified">${new Date().toISOString().slice(0,19)}Z</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>${man.join("")}</manifest><spine>${spine.join("")}</spine></package>`});
+    {n:"META-INF/container.xml",d:`<?xml version="1.0" encoding="utf-8"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`},
+    {n:"OEBPS/style.css",d:EPUB_CSS}];
+  files.push({n:"OEBPS/titlepage.xhtml",d:X(`<section epub:type="titlepage"><h1 class="title">${esc(title)}</h1><p class="sub">${lang==="vi"?"Bản dịch":"Translation"}</p></section>`,title)});
+  chs.forEach((c,i)=>files.push({n:`OEBPS/c${i+1}.xhtml`,d:X(`<section epub:type="chapter"><h2 class="chap" id="c${i+1}">${esc(c.title)}</h2>${paras(c.text)}</section>`,c.title)}));
+  const navItems=chs.map((c,i)=>`<li><a href="c${i+1}.xhtml">${esc(c.title)}</a></li>`).join("");
+  files.push({n:"OEBPS/nav.xhtml",d:X(`<nav epub:type="toc" id="toc"><h1 class="toc">${lang==="vi"?"Mục lục":"Contents"}</h1><ol><li><a href="titlepage.xhtml">${esc(title)}</a></li>${navItems}</ol></nav><nav epub:type="landmarks" hidden="hidden"><ol><li><a epub:type="bodymatter" href="c1.xhtml">${lang==="vi"?"Bắt đầu đọc":"Start reading"}</a></li></ol></nav>`,lang==="vi"?"Mục lục":"Contents")});
+  const ncxPts=[{t:title,src:"titlepage.xhtml"},...chs.map((c,i)=>({t:c.title,src:`c${i+1}.xhtml`}))].map((p,i)=>`<navPoint id="np${i+1}" playOrder="${i+1}"><navLabel><text>${esc(p.t)}</text></navLabel><content src="${p.src}"/></navPoint>`).join("");
+  files.push({n:"OEBPS/toc.ncx",d:`<?xml version="1.0" encoding="utf-8"?>\n<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="urn:uuid:${uid}"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="0"/><meta name="dtb:maxPageNumber" content="0"/></head><docTitle><text>${esc(title)}</text></docTitle><navMap>${ncxPts}</navMap></ncx>`});
+  const man=chs.map((c,i)=>`<item id="c${i+1}" href="c${i+1}.xhtml" media-type="application/xhtml+xml"/>`).join("");
+  const spine=chs.map((c,i)=>`<itemref idref="c${i+1}"/>`).join("");
+  files.push({n:"OEBPS/content.opf",d:`<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" xml:lang="${lang}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${uid}</dc:identifier><dc:title>${esc(title)}</dc:title><dc:language>${lang}</dc:language><meta property="dcterms:modified">${iso}</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="css" href="style.css" media-type="text/css"/><item id="title" href="titlepage.xhtml" media-type="application/xhtml+xml"/>${man}</manifest><spine toc="ncx"><itemref idref="title"/>${spine}</spine></package>`});
   save(zip(files),title.replace(/[\\/:*?"<>|]+/g,"_")+".epub");
 }
 function exportEpub(b=book,cs=chunks){
@@ -585,14 +603,27 @@ function repLines(rep){
 }
 function openFs(r){
   let ov;
-  const ta=hlArea(r.out||"",{onInput:v=>{r.out=v}});
+  const wrap=hlArea(r.out||"",{onInput:v=>{r.out=v}});
+  const tx=()=>wrap.querySelector("textarea");
   const closeAndSave=async()=>{await put("edch",r);ov.remove();renderEd();renderEdLib()};
+  const copyTxt=async()=>{const t=tx();try{await navigator.clipboard.writeText(t.value)}catch(e){t.select();document.execCommand("copy")}edSay("Đã sao chép nội dung.")};
+  const pasteTxt=async()=>{
+    const t=tx();let txt=null;
+    try{txt=await navigator.clipboard.readText()}catch(e){}
+    if(txt==null){edSay("Trình duyệt chưa cho phép đọc clipboard. Hãy nhấn giữ trong ô và chọn Dán.",1);t.focus();return}
+    const a=t.selectionStart,b=t.selectionEnd;
+    t.value=t.value.slice(0,a)+txt+t.value.slice(b);
+    t.dispatchEvent(new Event("input"));
+    t.setSelectionRange(a+txt.length,a+txt.length);t.focus();
+  };
   ov=el("div",{cls:"fs"},
     el("div",{cls:"fs-h"},el("strong",{textContent:`Chỉnh tay · chương ${r.idx+1}${r.trTitle?": "+r.trTitle:""}`}),
+      el("button",{textContent:"📋 Copy",title:"Sao chép toàn bộ nội dung",on:{click:copyTxt}}),
+      el("button",{textContent:"📥 Paste",title:"Dán vào vị trí con trỏ",on:{click:pasteTxt}}),
       el("span",{cls:"hint",textContent:"Chữ Trung được tô vàng."}),
       el("button",{textContent:"Đóng",on:{click:closeAndSave}}),
       el("button",{cls:"p",textContent:"Xác nhận đã chỉnh sửa",on:{click:async()=>{r.manual=true;await closeAndSave()}}})),
-    ta);
+    wrap);
   document.body.append(ov);
 }
 function keepRow(){
