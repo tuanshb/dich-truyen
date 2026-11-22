@@ -120,7 +120,7 @@ const $=id=>document.getElementById(id);
 const el=(t,p={},...k)=>{const e=document.createElement(t);for(const a in p){if(a==="on")for(const v in p.on)e.addEventListener(v,p.on[v]);else if(a==="cls")e.className=p[a];else e[a]=p[a]}e.append(...k);return e};
 /* ---------- IndexedDB ---------- */
 let db;
-const openDB=()=>new Promise((ok,no)=>{const r=indexedDB.open("dichtruyen",2);r.onupgradeneeded=()=>{const d=r.result,h=n=>d.objectStoreNames.contains(n);if(!h("books"))d.createObjectStore("books",{keyPath:"id"});if(!h("styles"))d.createObjectStore("styles",{keyPath:"id"});if(!h("chunks"))d.createObjectStore("chunks",{keyPath:"id"}).createIndex("book","bookId");if(!h("eds"))d.createObjectStore("eds",{keyPath:"id"});if(!h("edch"))d.createObjectStore("edch",{keyPath:"id"}).createIndex("pid","pid")};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+const openDB=()=>new Promise((ok,no)=>{const r=indexedDB.open("dichtruyen",3);r.onupgradeneeded=()=>{const d=r.result,h=n=>d.objectStoreNames.contains(n);if(!h("books"))d.createObjectStore("books",{keyPath:"id"});if(!h("styles"))d.createObjectStore("styles",{keyPath:"id"});if(!h("chunks"))d.createObjectStore("chunks",{keyPath:"id"}).createIndex("book","bookId");if(!h("eds"))d.createObjectStore("eds",{keyPath:"id"});if(!h("edch"))d.createObjectStore("edch",{keyPath:"id"}).createIndex("pid","pid");if(!h("kv"))d.createObjectStore("kv",{keyPath:"id"})};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
 const tx=(st,m,fn)=>new Promise((ok,no)=>{const t=db.transaction(st,m);const r=fn(t.objectStore(st));t.oncomplete=()=>ok(r&&r.result);t.onerror=()=>no(t.error)});
 const put=(st,v)=>tx(st,"readwrite",s=>s.put(v));
 const all=st=>tx(st,"readonly",s=>s.getAll());
@@ -283,7 +283,7 @@ const crc=b=>{let c=~0;for(let i=0;i<b.length;i++)c=crcT[(c^b[i])&255]^(c>>>8);r
 function zip(files){
   const enc=new TextEncoder(),parts=[],cd=[];let off=0,cs=0;
   for(const f of files){
-    const nm=enc.encode(f.n),d=enc.encode(f.d),c=crc(d);
+    const nm=enc.encode(f.n),d=f.d instanceof Uint8Array?f.d:enc.encode(f.d),c=crc(d);
     const h=new DataView(new ArrayBuffer(30));
     h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(12,0x21,true);h.setUint32(14,c,true);h.setUint32(18,d.length,true);h.setUint32(22,d.length,true);h.setUint16(26,nm.length,true);
     parts.push(h.buffer,nm,d);
@@ -311,7 +311,7 @@ nav ol{list-style:none;padding-left:0;margin:0}
 nav ol ol{padding-left:1.4em}
 nav li{margin:.45em 0;text-align:left}
 h1.toc{text-align:center;font-size:1.6em;margin:1em 0 1em}`;
-function epubFrom(title,tl,chs){
+function epubFrom(title,tl,chs,cover){
   const lang=/việt/i.test(tl)?"vi":"en",uid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now());
   const iso=new Date().toISOString().slice(0,19)+"Z",n=chs.length;
   const X=(body,ttl,extraHead="")=>`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="${lang}" lang="${lang}">\n<head><meta charset="utf-8"/><title>${esc(ttl)}</title><link rel="stylesheet" type="text/css" href="style.css"/>${extraHead}</head>\n<body>${body}</body>\n</html>`;
@@ -319,6 +319,7 @@ function epubFrom(title,tl,chs){
   const files=[{n:"mimetype",d:"application/epub+zip"},
     {n:"META-INF/container.xml",d:`<?xml version="1.0" encoding="utf-8"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`},
     {n:"OEBPS/style.css",d:EPUB_CSS}];
+  if(cover){files.push({n:"OEBPS/cover.jpg",d:cover});files.push({n:"OEBPS/cover.xhtml",d:X(`<section epub:type="cover"><img src="cover.jpg" alt="Bìa" style="width:100%;height:auto"/></section>`,title)})}
   files.push({n:"OEBPS/titlepage.xhtml",d:X(`<section epub:type="titlepage"><h1 class="title">${esc(title)}</h1><p class="sub">${lang==="vi"?"Bản dịch":"Translation"}</p></section>`,title)});
   chs.forEach((c,i)=>files.push({n:`OEBPS/c${i+1}.xhtml`,d:X(`<section epub:type="chapter"><h2 class="chap" id="c${i+1}">${esc(c.title)}</h2>${paras(c.text)}</section>`,c.title)}));
   const navItems=chs.map((c,i)=>`<li><a href="c${i+1}.xhtml">${esc(c.title)}</a></li>`).join("");
@@ -327,12 +328,12 @@ function epubFrom(title,tl,chs){
   files.push({n:"OEBPS/toc.ncx",d:`<?xml version="1.0" encoding="utf-8"?>\n<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="urn:uuid:${uid}"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="0"/><meta name="dtb:maxPageNumber" content="0"/></head><docTitle><text>${esc(title)}</text></docTitle><navMap>${ncxPts}</navMap></ncx>`});
   const man=chs.map((c,i)=>`<item id="c${i+1}" href="c${i+1}.xhtml" media-type="application/xhtml+xml"/>`).join("");
   const spine=chs.map((c,i)=>`<itemref idref="c${i+1}"/>`).join("");
-  files.push({n:"OEBPS/content.opf",d:`<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" xml:lang="${lang}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${uid}</dc:identifier><dc:title>${esc(title)}</dc:title><dc:language>${lang}</dc:language><meta property="dcterms:modified">${iso}</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="css" href="style.css" media-type="text/css"/><item id="title" href="titlepage.xhtml" media-type="application/xhtml+xml"/>${man}</manifest><spine toc="ncx"><itemref idref="title"/>${spine}</spine></package>`});
+  files.push({n:"OEBPS/content.opf",d:`<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" xml:lang="${lang}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${uid}</dc:identifier><dc:title>${esc(title)}</dc:title><dc:language>${lang}</dc:language><meta property="dcterms:modified">${iso}</meta>${cover?'<meta name="cover" content="cover-img"/>':""}</metadata><manifest>${cover?'<item id="cover-img" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/><item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>':""}<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="css" href="style.css" media-type="text/css"/><item id="title" href="titlepage.xhtml" media-type="application/xhtml+xml"/>${man}</manifest><spine toc="ncx">${cover?'<itemref idref="cover"/>':""}<itemref idref="title"/>${spine}</spine></package>`});
   save(zip(files),title.replace(/[\\/:*?"<>|]+/g,"_")+".epub");
 }
-function exportEpub(b=book,cs=chunks){
+async function exportEpub(b=book,cs=chunks){
   const ds=doneChs(cs);if(!ds.length){say("Chưa có chương nào dịch xong để xuất.",1);return}
-  epubFrom(b.title,b.tl,ds.map(c=>({title:c.title,text:c.cs.map(x=>x.tr).join("\n")})));
+  epubFrom(b.title,b.tl,ds.map(c=>({title:c.title,text:c.cs.map(x=>x.tr).join("\n")})),await coverBytes(b.title,b.author||""));
   say(`Đã xuất EPUB với ${ds.length}/${chapters(cs).length} chương đã dịch xong.`);
 }
 function exportTxt(){
@@ -603,7 +604,7 @@ function repLines(rep){
 }
 function openFs(r){
   let ov;
-  const wrap=hlArea(r.out||"",{onInput:v=>{r.out=v}});
+  const wrap=hlArea(r.out||"",{onInput:v=>{r.out=v;r.edited=true}});
   const tx=()=>wrap.querySelector("textarea");
   const closeAndSave=async()=>{await put("edch",r);ov.remove();renderEd();renderEdLib()};
   const copyTxt=async()=>{const t=tx();try{await navigator.clipboard.writeText(t.value)}catch(e){t.select();document.execCommand("copy")}edSay("Đã sao chép nội dung.")};
@@ -635,6 +636,45 @@ function keepRow(){
       renderEd();}}})," Giữ màn hình sáng khi biên tập"),
     el("p",{cls:"hint",textContent:sup?(wl?"Đang giữ màn hình sáng.":"Sẽ giữ màn hình sáng khi bắt đầu chạy."):"Trình duyệt này không hỗ trợ giữ màn hình sáng. Hãy tăng thời gian tự khoá màn hình trong Cài đặt và giữ app mở."}));
 }
+/* ---------- Bìa EPUB: ảnh mẫu + tên sách + tác giả + font tuỳ chọn ---------- */
+async function kvGet(k){const r=await tx("kv","readonly",s=>s.get(k));return r?r.v:null}
+async function kvSet(k,v){await tx("kv","readwrite",s=>s.put({id:k,v}))}
+async function coverFontFamily(){
+  try{const buf=await kvGet("coverFont");if(!buf)return"";const ff=new FontFace("CoverFont",buf);await ff.load();document.fonts.add(ff);return"CoverFont,"}catch(e){return""}
+}
+function fitLines(g,text,fam,maxW,maxLines,start){
+  for(let size=start;size>=56;size-=6){
+    g.font=`${size}px ${fam}`;const lines=[];let cur="";
+    for(const ch of [...text]){if(cur&&g.measureText(cur+ch).width>maxW){lines.push(cur);cur=ch}else cur+=ch}
+    if(cur)lines.push(cur);
+    if(lines.length<=maxLines)return{lines,size};
+  }
+  return{lines:[text.slice(0,24)],size:56};
+}
+async function makeCover(title,author){
+  const W=1200,H=1800,c=document.createElement("canvas");c.width=W;c.height=H;const g=c.getContext("2d");
+  let img=null;
+  try{const r=await fetch("cover-template.jpg",{cache:"no-store"});if(r.ok)img=await createImageBitmap(await r.blob())}catch(e){}
+  if(img)g.drawImage(img,0,0,W,H);else{g.fillStyle="#f3eee2";g.fillRect(0,0,W,H)}
+  const ff=await coverFontFamily();
+  const fam=`${ff}"KaiTi","STKaiti","Kaiti SC","Noto Serif SC",Georgia,serif`;
+  g.fillStyle="#1d1d1d";g.textAlign="center";g.textBaseline="middle";
+  if(title){
+    const f=fitLines(g,title,fam,960,2,150);
+    const lh=f.size*1.25,y0=H*0.19-(f.lines.length-1)*lh/2;
+    g.font=`${f.size}px ${fam}`;
+    f.lines.forEach((ln,i)=>g.fillText(ln,W/2,y0+i*lh));
+  }
+  if(author){g.font=`64px ${fam}`;g.fillStyle="#444";g.textAlign="right";g.fillText(author,W*0.9,H*0.915)}
+  return new Promise(res=>c.toBlob(b=>res(b),"image/jpeg",0.92));
+}
+async function coverBytes(title,author){try{const b=await makeCover(title,author);return b?new Uint8Array(await b.arrayBuffer()):null}catch(e){return null}}
+function authorRow(){
+  return el("div",{cls:"row",style:"margin-top:8px"},
+    el("div",{},el("label",{textContent:"Tác giả (in trên bìa EPUB)"}),el("input",{value:ed.author||"",on:{change:async e=>{ed.author=e.target.value.trim();await edSave()}}})),
+    el("div",{},el("label",{textContent:"Font chữ cho bìa (.ttf/.otf, tuỳ chọn)"}),el("input",{type:"file",accept:".ttf,.otf,.woff",on:{change:async e=>{const f=e.target.files[0];if(!f)return;await kvSet("coverFont",await f.arrayBuffer());edSay("Đã lưu font chữ cho bìa: "+f.name)}}})));
+}
+const bestTxt=r=>{if(r.accept===false)return r.tr;if(r.manual||r.edited)return r.out||r.tr;return r.out2||r.out1||r.out||r.tr};
 /* ---------- Biên tập: Bước 1 (bản dịch) và Bước 2 (so sánh bản gốc) ---------- */
 const CJK1=/[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff01-\uff65]/;
 const CJKG=/[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff01-\uff65]/g;
@@ -646,7 +686,7 @@ function finalize(r){
   const w=[];
   if(r.lenWarn!=null)w.push("Độ dài bản sửa còn "+r.lenWarn+"% so với bản cũ, hãy xem kỹ.");
   if(r.han>0)w.push("Còn "+r.han+" ký tự Trung sau khi xử lý.");
-  r.warns=w;r.status=w.length?"warn":"ok";r.accept=true;r.manual=false;
+  r.warns=w;r.status=w.length?"warn":"ok";r.accept=true;r.manual=false;r.edited=false;
 }
 const bdg=r=>r.manual?"Đã chỉnh sửa":r.status==="warn"?"Cần xem lại":(r.s2===true||r.s2==="skip")?"Đã xử lý đủ":r.s1?"Xong bước 1":"Chưa xử lý";
 
@@ -729,7 +769,7 @@ async function step1(r,mdl){
     t=outs.join("\n");r.notes=notes.join("\n");
   }
   t=await repairHan(fixPunct(t.trim()),mdl);
-  r.out=t;r.han1=hanCount(t);r.han=r.han1;r.lenWarn=lenPct(T,t);
+  r.out=t;r.out1=t;r.han1=hanCount(t);r.han=r.han1;r.lenWarn=lenPct(T,t);
   finalize(r);
 }
 
@@ -744,7 +784,7 @@ async function step2(r,mdl){
   }
   const out=await repairHan(fixPunct(outs.join("\n").trim()),mdl);
   const cov=covs.length?Math.round(covs.reduce((a,b)=>a+b,0)/covs.length):null;
-  r.out=out;r.rep={cov,miss,wrong,extra,rawLen:rl};r.han=hanCount(out);r.lenWarn=lenPct(r.tr,out);
+  r.out=out;r.out2=out;r.rep={cov,miss,wrong,extra,rawLen:rl};r.han=hanCount(out);r.lenWarn=lenPct(r.tr,out);
   finalize(r);
 }
 
@@ -820,7 +860,7 @@ async function runEd(mode,only){
 }
 async function redoRow(r){
   if(edRunning)return;
-  Object.assign(r,{s1:false,s2:false,out:"",rep:null,han:0,han1:0,notes:"",warns:[],status:"",lenWarn:null});
+  Object.assign(r,{s1:false,s2:false,out:"",out1:"",out2:"",edited:false,manual:false,rep:null,han:0,han1:0,notes:"",warns:[],status:"",lenWarn:null});
   await put("edch",r);await runEd(0,[r]);
 }
 
@@ -874,8 +914,13 @@ function renderReport(){
   sec.append(el("div",{cls:"row",style:"margin-top:8px"},el("button",{textContent:"Tải báo cáo (.txt)",on:{click:()=>save(new Blob([reportText()],{type:"text/plain;charset=utf-8"}),ed.title.replace(/[\\/:*?"<>|]+/g,"_")+"-bao-cao.txt")}})));
   return sec;
 }
-const edFinal=()=>edRows.map(r=>({title:r.trTitle||("Chương "+(r.idx+1)),text:(r.accept&&r.out)?r.out:r.tr}));
-function edEpub(){if(!edRows.length)return;epubFrom(ed.title,ed.tl,edFinal());edSay(`Đã xuất EPUB: ${edRows.length} chương (chương chưa biên tập giữ nguyên bản dịch cũ).`)}
+const edFinal=()=>edRows.map(r=>({title:r.trTitle||("Chương "+(r.idx+1)),text:bestTxt(r)}));
+async function edEpub(){
+  if(!edRows.length)return;
+  const cv=await coverBytes(ed.title,ed.author||"");
+  epubFrom(ed.title,ed.tl,edFinal(),cv);
+  edSay(`Đã xuất EPUB: ${edRows.length} chương. Chương nào chưa xem lại thì dùng bản biên tập lần 2.`);
+}
 function edTxt(){if(!edRows.length)return;save(new Blob([edFinal().map(c=>c.title+"\n\n"+c.text).join("\n\n\n")],{type:"text/plain;charset=utf-8"}),ed.title.replace(/[\\/:*?"<>|]+/g,"_")+".txt");edSay("Đã xuất TXT.")}
 function renderEd(){
   const W=$("edWs");W.textContent="";
@@ -888,7 +933,7 @@ function renderEd(){
     el("div",{cls:"row",style:"margin:10px 0"},
       ...stepBtns(1),...stepBtns(2),el("button",{disabled:edRunning,textContent:"Chạy tự động cả hai bước",on:{click:()=>runEd(0)}}),
       el("button",{textContent:"Xuất EPUB",on:{click:edEpub}}),el("button",{textContent:"Xuất .txt",on:{click:edTxt}})),
-    el("div",{id:"edStatus",role:"status"}),keepRow());
+    el("div",{id:"edStatus",role:"status"}),keepRow(),authorRow());
   const ck=(k,l)=>el("label",{cls:"chk"},el("input",{type:"checkbox",checked:o[k],disabled:dis,on:{change:async e=>{o[k]=e.target.checked;await edSave()}}})," "+l);
   const ss=el("select",{disabled:dis,on:{change:async e=>{ed.styleId=e.target.value;await edSave()}}},el("option",{value:"",textContent:"(Không dùng văn phong)"}));
   styles.forEach(s=>ss.append(el("option",{value:s.id,textContent:s.name,selected:s.id===ed.styleId})));
@@ -913,7 +958,7 @@ function renderEd(){
       if(r.out){
         d.append(el("label",{cls:"chk"},el("input",{type:"checkbox",checked:r.accept,on:{change:async e=>{r.accept=e.target.checked;await put("edch",r)}}})," Dùng bản đã sửa khi xuất file"));
         if(r.warns&&r.warns.length)d.append(el("pre",{cls:"nt",textContent:"⚠ "+r.warns.join("\n⚠ ")}));if(r.rep)d.append(el("pre",{cls:"nt",textContent:"Độ bao phủ "+(r.rep.cov==null?"n/a":r.rep.cov+"%")+"\n"+(repLines(r.rep).join("\n")||"Không có ý thiếu, thừa hoặc sai.")}));if(r.notes)d.append(el("pre",{cls:"nt",textContent:r.notes}));
-        d.append(el("div",{cls:"row",style:"align-items:center"},el("label",{textContent:"Bản đã sửa (có thể chỉnh tay)"}),el("button",{textContent:"Mở toàn màn hình",on:{click:()=>openFs(r)}})),hlArea(r.out,{style:"min-height:180px",onChange:async v=>{r.out=v;await put("edch",r)}}));
+        d.append(el("div",{cls:"row",style:"align-items:center"},el("label",{textContent:"Bản đã sửa (có thể chỉnh tay)"}),el("button",{textContent:"Mở toàn màn hình",on:{click:()=>openFs(r)}})),hlArea(r.out,{style:"min-height:180px",onChange:async v=>{r.out=v;r.edited=true;await put("edch",r)}}));
       }
       d.append(el("label",{textContent:"Bản dịch hiện có"}),el("textarea",{value:r.tr,readOnly:true,style:"min-height:120px"}));
       if(r.raw)d.append(el("label",{textContent:"Bản gốc"}),el("textarea",{value:r.raw,readOnly:true,style:"min-height:120px"}));

@@ -1,7 +1,7 @@
 // Service worker: cho phép cài app và mở giao diện khi mất mạng.
 // Các lệnh gọi API và proxy là cross-origin nên không bao giờ bị cache ở đây.
 const CACHE = "dich-truyen-v2";
-const SHELL = ["./", "index.html", "cao-truyen.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
+const SHELL = ["./", "index.html", "cao-truyen.html", "manifest.webmanifest", "icon.svg", "cover-template.jpg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
   // Cache từng file riêng, thiếu một file không làm hỏng cả quá trình cài.
