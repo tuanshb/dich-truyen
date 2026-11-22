@@ -28,7 +28,9 @@ button{padding:8px 14px;border-radius:6px;border:1px solid var(--line);backgroun
 button.p{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600}
 button:disabled{opacity:.5;cursor:not-allowed}
 .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:10px 0}.bar i{display:block;height:100%;width:0;background:var(--acc)}
-#status{font-size:13px;color:var(--mute);min-height:20px}#status.e{color:var(--err)}
+#status,#edStatus{font-size:13px;color:var(--mute);min-height:20px}#status.e,#edStatus.e{color:var(--err)}
+.chk{display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px;margin:6px 0}
+.nt{white-space:pre-wrap;font:13px/1.5 system-ui,sans-serif;background:var(--src);padding:8px 10px;border-radius:6px;margin:6px 0}
 .bk{display:block;width:100%;text-align:left;margin-bottom:6px}.bk.on{border-color:var(--acc);box-shadow:inset 3px 0 var(--acc)}
 .bk small{display:block;color:var(--mute)}
 .hint{font-size:12px;color:var(--mute);margin:6px 0 0}
@@ -37,7 +39,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .tr{font:17px/1.75 Georgia,"Noto Serif",serif;white-space:pre-wrap;max-width:68ch;margin:0 0 12px}
 .sr{background:var(--src);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:14px;color:var(--mute);white-space:pre-wrap;display:none}
 body.bi .sr{display:block}
-.it{display:flex;gap:6px;margin-bottom:6px}.it .bk{margin:0;flex:1}.kc{display:flex;gap:6px;align-items:center;margin:4px 0}.kc span{flex:1;font-family:ui-monospace,monospace}
+.it{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}.it .bk{margin:0;flex:1 1 100%}.kc{display:flex;gap:6px;align-items:center;margin:4px 0}.kc span{flex:1;font-family:ui-monospace,monospace}
 [hidden]{display:none!important}
 .mt{display:flex;border-bottom:1px solid var(--line);background:var(--panel)}
 .mt button{flex:1;border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:12px 8px;font-weight:600;color:var(--mute)}
@@ -49,7 +51,7 @@ body.bi .sr{display:block}
 </head>
 <body>
 <header><h1>Dịch truyện AI</h1><span>Dữ liệu và key chỉ lưu trong trình duyệt này.</span></header>
-<nav class="mt" role="tablist" aria-label="Chức năng"><button role="tab" id="mt1" aria-selected="true">Dịch truyện</button><button role="tab" id="mt2" aria-selected="false">Cào truyện</button></nav>
+<nav class="mt" role="tablist" aria-label="Chức năng"><button role="tab" id="mt1" aria-selected="true">Dịch truyện</button><button role="tab" id="mt2" aria-selected="false">Cào truyện</button><button role="tab" id="mt3" aria-selected="false">Biên tập</button></nav>
 <main id="tabTr">
 <aside>
 <details open><summary>Thư viện</summary><div id="lib"></div></details>
@@ -62,9 +64,9 @@ body.bi .sr{display:block}
 </details>
 <details><summary>Kết nối AI và hạn mức</summary>
 <label for="prov">Nhà cung cấp</label>
-<select id="prov"><option value="gemini">Google Gemini</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="custom">Tương thích OpenAI (tự nhập)</option></select>
+<select id="prov"><option value="gemini">Google Gemini</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="openrouter">OpenRouter (nhiều model)</option><option value="custom">Tương thích OpenAI (tự nhập)</option></select>
 <label for="keyIn">Thêm key (nhiều key cách nhau bằng dấu ;)</label><div class="row"><input id="keyIn" type="password" autocomplete="off"><button id="keyAdd" style="flex:0">Thêm</button></div><div id="keyList"></div><p class="hint">Key lưu trong trình duyệt và tự nạp mỗi lần mở. Khi một key bị giới hạn, app tự chuyển sang key kế tiếp.</p>
-<label for="model">Model</label><input id="model">
+<label for="model">Model</label><input id="model"><p class="hint" id="mdHint"></p>
 <div id="baseW"><label for="base">Base URL</label><input id="base"></div>
 <div class="row"><div><label for="delay">Nghỉ giữa các lượt (giây)</label><input id="delay" type="number" min="0" step="1"></div><div><label for="cap">Tối đa lượt/ngày, tính tổng mọi key (0 = không giới hạn)</label><input id="cap" type="number" min="0" step="1"></div></div>
 <label for="max">Độ dài mỗi đoạn (ký tự)</label><input id="max" type="number" min="500" max="12000" step="100">
@@ -88,17 +90,34 @@ body.bi .sr{display:block}
 <div id="ws"><section><p class="hint">Chọn một truyện trong thư viện hoặc thêm truyện mới.</p></section></div>
 </main>
 <div id="tabSc" hidden><iframe id="scFrame" title="Cào truyện"></iframe></div>
+<main id="tabEd" hidden>
+<aside>
+<details open><summary>Dự án biên tập</summary><div id="edLib"></div></details>
+<details open><summary>Tạo dự án mới từ file</summary>
+<label for="edTitle">Tên dự án</label><input id="edTitle">
+<label for="edTr">Bản dịch (.txt)</label><input id="edTr" type="file" accept=".txt,text/plain">
+<label for="edRaw">Bản gốc (.txt, nên có để so sánh)</label><input id="edRaw" type="file" accept=".txt,text/plain">
+<div class="row"><div><label for="edSl">Ngôn ngữ gốc</label><input id="edSl" value="Tiếng Trung"></div><div><label for="edTl">Ngôn ngữ bản dịch</label><input id="edTl" value="Tiếng Việt"></div></div>
+<label for="edGl">Bảng thuật ngữ và tên riêng (Gốc = Dịch, mỗi dòng một mục)</label><textarea id="edGl"></textarea>
+<div class="row" style="margin-top:8px"><button id="edGlFile">Mở file bảng thuật ngữ</button><button id="edGo" class="p">Tạo dự án</button></div>
+<input id="edGlIn" type="file" accept=".txt,text/plain" hidden>
+<p class="hint">Chương của hai file được ghép theo số chương trong tiêu đề (hỗ trợ 第N章, Chapter N, Chương N). Nếu không ghép được thì ghép theo thứ tự.</p>
+</details>
+</aside>
+<div id="edWs"></div>
+</main>
+
 <script>
 const $=id=>document.getElementById(id);
 const el=(t,p={},...k)=>{const e=document.createElement(t);for(const a in p){if(a==="on")for(const v in p.on)e.addEventListener(v,p.on[v]);else if(a==="cls")e.className=p[a];else e[a]=p[a]}e.append(...k);return e};
 /* ---------- IndexedDB ---------- */
 let db;
-const openDB=()=>new Promise((ok,no)=>{const r=indexedDB.open("dichtruyen",1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore("books",{keyPath:"id"});d.createObjectStore("styles",{keyPath:"id"});d.createObjectStore("chunks",{keyPath:"id"}).createIndex("book","bookId")};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+const openDB=()=>new Promise((ok,no)=>{const r=indexedDB.open("dichtruyen",2);r.onupgradeneeded=()=>{const d=r.result,h=n=>d.objectStoreNames.contains(n);if(!h("books"))d.createObjectStore("books",{keyPath:"id"});if(!h("styles"))d.createObjectStore("styles",{keyPath:"id"});if(!h("chunks"))d.createObjectStore("chunks",{keyPath:"id"}).createIndex("book","bookId");if(!h("eds"))d.createObjectStore("eds",{keyPath:"id"});if(!h("edch"))d.createObjectStore("edch",{keyPath:"id"}).createIndex("pid","pid")};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
 const tx=(st,m,fn)=>new Promise((ok,no)=>{const t=db.transaction(st,m);const r=fn(t.objectStore(st));t.oncomplete=()=>ok(r&&r.result);t.onerror=()=>no(t.error)});
 const put=(st,v)=>tx(st,"readwrite",s=>s.put(v));
 const all=st=>tx(st,"readonly",s=>s.getAll());
 /* ---------- State ---------- */
-const PRESET={gemini:["","gemini-2.5-flash"],openai:["https://api.openai.com/v1","gpt-4o-mini"],deepseek:["https://api.deepseek.com/v1","deepseek-chat"],custom:["",""]};
+const PRESET={gemini:["","gemini-2.5-flash"],openai:["https://api.openai.com/v1","gpt-4o-mini"],deepseek:["https://api.deepseek.com/v1","deepseek-chat"],openrouter:["https://openrouter.ai/api/v1","openai/gpt-oss-120b:free"],custom:["",""]};
 let cfg={prov:"gemini",key:"",model:"gemini-2.5-flash",base:"",delay:6,cap:0,max:3000,extract:true};
 let books=[],styles=[],book=null,chunks=[],curCh=0,running=false,abort=null;
 try{Object.assign(cfg,JSON.parse(localStorage.getItem("dichtruyen:cfg")||"{}"))}catch(e){}
@@ -153,8 +172,8 @@ const parseGl=t=>t.split("\n").map(l=>l.split("=")).filter(a=>a.length>=2&&a[0].
 /* ---------- AI ---------- */
 const sleep=(ms,sig)=>new Promise((ok,no)=>{const t=setTimeout(ok,ms);sig&&sig.addEventListener("abort",()=>{clearTimeout(t);no(new DOMException("x","AbortError"))},{once:true})});
 const fail=(r,j)=>{const e=new Error((j&&j.error&&j.error.message)||("Lỗi "+r.status));e.status=r.status;return e};
-async function callAI(sys,user,sig,k){
-  const m=cfg.model.trim();
+async function callAI(sys,user,sig,k,mdl){
+  const m=(mdl||cfg.model).trim(),ms=m.split(",").map(x=>x.trim()).filter(Boolean);
   if(cfg.prov==="gemini"){
     const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`,{method:"POST",signal:sig,headers:{"Content-Type":"application/json","x-goog-api-key":k},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:"user",parts:[{text:user}]}],generationConfig:{temperature:.4}})});
     const j=await r.json().catch(()=>({}));if(!r.ok)throw fail(r,j);
@@ -162,23 +181,24 @@ async function callAI(sys,user,sig,k){
     return p.map(x=>x.text||"").join("");
   }
   const base=(cfg.base.trim()||PRESET[cfg.prov][0]).replace(/\/+$/,"");if(!base)throw new Error("Chưa nhập Base URL.");
-  const r=await fetch(base+"/chat/completions",{method:"POST",signal:sig,headers:{"Content-Type":"application/json",Authorization:"Bearer "+k},body:JSON.stringify({model:m,temperature:.4,messages:[{role:"system",content:sys},{role:"user",content:user}]})});
-  const j=await r.json().catch(()=>({}));if(!r.ok)throw fail(r,j);return j.choices[0].message.content;
+  const r=await fetch(base+"/chat/completions",{method:"POST",signal:sig,headers:{"Content-Type":"application/json",Authorization:"Bearer "+k},body:JSON.stringify({model:cfg.prov==="openrouter"?ms[0]:m,...(cfg.prov==="openrouter"&&ms.length>1?{models:ms}:{}),temperature:.4,messages:[{role:"system",content:sys},{role:"user",content:user}]})});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw fail(r,j);if(!j.choices||!j.choices[0])throw new Error((j.error&&j.error.message)||"Nhà cung cấp không trả về nội dung.");return j.choices[0].message.content;
 }
 const keys=()=>[...new Set(cfg.key.split(/[;\n]+/).map(x=>x.trim()).filter(Boolean))];
 const cool={};let ki=0;
 function pickKey(){const ks=keys(),now=Date.now();for(let i=0;i<ks.length;i++){const k=ks[(ki+i)%ks.length];if((cool[k]||0)<=now){ki=(ki+i+1)%ks.length;return k}}return null}
-async function ask(sys,user){
+async function ask(sys,user,sg,mdl){
+  const sig=sg||abort.signal;
   const ks=keys();let tries=0,n429=0;
   while(tries++<ks.length*3+4){
     const k=pickKey();
-    if(!k){const w=Math.min(...ks.map(x=>cool[x]))-Date.now();if(w>120000)throw new Error("Mọi key đều đang bị khoá hoặc không hợp lệ.");await sleep(Math.max(1000,w),abort.signal);continue}
-    try{return await callAI(sys,user,abort.signal,k)}
+    if(!k){const w=Math.min(...ks.map(x=>cool[x]))-Date.now();if(w>120000)throw new Error("Mọi key đều đang bị khoá hoặc không hợp lệ.");await sleep(Math.max(1000,w),sig);continue}
+    try{return await callAI(sys,user,sig,k,mdl)}
     catch(e){
       if(e.name==="AbortError")throw e;
-      if((e.status===401||e.status===403)&&ks.length>1){cool[k]=Date.now()+864e5;continue}
+      if((e.status===401||e.status===402||e.status===403)&&ks.length>1){cool[k]=Date.now()+864e5;continue}
       if(e.status===429){cool[k]=Date.now()+65000;if(++n429>=ks.length*2+1){e.quota=true;throw e}continue}
-      if(e.status>=500){await sleep(8000,abort.signal);continue}
+      if(e.status>=500){await sleep(8000,sig);continue}
       throw e;
     }
   }
@@ -273,18 +293,22 @@ const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const chapters=(cs=chunks)=>{const m=new Map();for(const c of cs){if(!m.has(c.ch))m.set(c.ch,{title:c.title,cs:[]});if(c.titleTr)m.get(c.ch).title=c.titleTr;m.get(c.ch).cs.push(c)}return[...m.values()]};
 const doneChs=(cs=chunks)=>{const all=chapters(cs),multi=all.length>1;return all.filter(x=>x.cs.every(c=>c.tr)&&!(multi&&x.cs[0].title==="Mở đầu"))};
 function save(blob,name){const a=el("a",{href:URL.createObjectURL(blob),download:name});a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
-function exportEpub(b=book,cs=chunks){
-  const ds=doneChs(cs);if(!ds.length){say("Chưa có chương nào dịch xong để xuất.",1);return}
-  const lang=/việt/i.test(b.tl)?"vi":"en",xh=(t,b)=>`<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}"><head><title>${esc(t)}</title></head><body>${b}</body></html>`;
+function epubFrom(title,tl,chs){
+  const lang=/việt/i.test(tl)?"vi":"en",uid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now());
+  const xh=(t,x)=>`<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}"><head><title>${esc(t)}</title></head><body>${x}</body></html>`;
   const files=[{n:"mimetype",d:"application/epub+zip"},
     {n:"META-INF/container.xml",d:`<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`}];
   const man=[],spine=[],nav=[];
-  ds.forEach((c,i)=>{const f=`c${i+1}.xhtml`;
-    files.push({n:"OEBPS/"+f,d:xh(c.title,`<h2>${esc(c.title)}</h2>`+c.cs.map(x=>x.tr).join("\n").split(/\n+/).map(p=>`<p>${esc(p)}</p>`).join(""))});
+  chs.forEach((c,i)=>{const f=`c${i+1}.xhtml`;
+    files.push({n:"OEBPS/"+f,d:xh(c.title,`<h2>${esc(c.title)}</h2>`+c.text.split(/\n+/).filter(Boolean).map(p=>`<p>${esc(p)}</p>`).join(""))});
     man.push(`<item id="c${i+1}" href="${f}" media-type="application/xhtml+xml"/>`);spine.push(`<itemref idref="c${i+1}"/>`);nav.push(`<li><a href="${f}">${esc(c.title)}</a></li>`)});
   files.push({n:"OEBPS/nav.xhtml",d:`<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Mục lục</title></head><body><nav epub:type="toc"><h1>Mục lục</h1><ol>${nav.join("")}</ol></nav></body></html>`});
-  files.push({n:"OEBPS/content.opf",d:`<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">urn:uuid:${b.id}</dc:identifier><dc:title>${esc(b.title)}</dc:title><dc:language>${lang}</dc:language><meta property="dcterms:modified">${new Date().toISOString().slice(0,19)}Z</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>${man.join("")}</manifest><spine>${spine.join("")}</spine></package>`});
-  save(zip(files),b.title.replace(/[\\/:*?"<>|]+/g,"_")+".epub");
+  files.push({n:"OEBPS/content.opf",d:`<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">urn:uuid:${uid}</dc:identifier><dc:title>${esc(title)}</dc:title><dc:language>${lang}</dc:language><meta property="dcterms:modified">${new Date().toISOString().slice(0,19)}Z</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>${man.join("")}</manifest><spine>${spine.join("")}</spine></package>`});
+  save(zip(files),title.replace(/[\\/:*?"<>|]+/g,"_")+".epub");
+}
+function exportEpub(b=book,cs=chunks){
+  const ds=doneChs(cs);if(!ds.length){say("Chưa có chương nào dịch xong để xuất.",1);return}
+  epubFrom(b.title,b.tl,ds.map(c=>({title:c.title,text:c.cs.map(x=>x.tr).join("\n")})));
   say(`Đã xuất EPUB với ${ds.length}/${chapters(cs).length} chương đã dịch xong.`);
 }
 function exportTxt(){
@@ -325,6 +349,7 @@ function renderLib(){
       el("button",{cls:"bk"+(book&&book.id===b.id?" on":""),on:{click:()=>openBook(b.id)}},b.title,el("small",{textContent:(b.done||0)+"/"+(b.total||0)+" đoạn"})),
       el("button",{cls:"sm",textContent:"Sửa",title:"Đổi tên truyện",on:{click:async()=>{const v=prompt("Tên truyện:",b.title);if(v&&v.trim()){b.title=v.trim();await put("books",b);renderAll()}}}}),
       el("button",{cls:"sm",textContent:"EPUB",title:"Xuất EPUB các chương đã dịch xong",on:{click:()=>epubOf(b)}}),
+      ...(isDone(b)?[el("button",{cls:"sm",textContent:"Biên tập",title:"Chuyển sang tab Biên tập",on:{click:()=>toEditor(b)}})]:[]),
       el("button",{cls:"sm d",textContent:"Xoá",title:"Xoá truyện khỏi thư viện",on:{click:()=>deleteBook(b)}}))))};
   group("Đang dịch",sorted.filter(b=>!isDone(b)));group("Đã dịch xong",sorted.filter(isDone));
   if(books.some(isDone))L.append(el("button",{textContent:"Clear: xoá truyện đã dịch xong",on:{click:clearDone}}));
@@ -404,7 +429,7 @@ $("stNew").onclick=async()=>{const x={id:"s"+Date.now(),name:$("stName").value.t
 $("stDel").onclick=async()=>{if(styles.length<2){return}const id=$("stSel").value;if(!confirm("Xoá văn phong này?"))return;await tx("styles","readwrite",s=>s.delete(id));styles=styles.filter(s=>s.id!==id);renderStyles();renderWs()};
 /* ---------- Config UI ---------- */
 const CF=["prov","model","base","delay","cap","max","extract"];
-function cfgToUI(){renderKeys();CF.forEach(f=>{const e=$(f);if(f==="extract")e.checked=cfg[f];else e.value=cfg[f]});$("baseW").style.display=cfg.prov==="gemini"?"none":"";showUse()}
+function cfgToUI(){renderKeys();$("mdHint").textContent=cfg.prov==="openrouter"?"OpenRouter: có thể nhập nhiều model cách nhau dấu phẩy, hệ thống thử lần lượt khi model đầu lỗi hoặc hết lượt. Model miễn phí có đuôi :free, xem danh sách tại openrouter.ai/models.":"";CF.forEach(f=>{const e=$(f);if(f==="extract")e.checked=cfg[f];else e.value=cfg[f]});$("baseW").style.display=cfg.prov==="gemini"?"none":"";showUse()}
 CF.forEach(f=>$(f).addEventListener("input",()=>{const e=$(f);cfg[f]=f==="extract"?e.checked:(["delay","cap","max"].includes(f)?(+e.value||0):e.value);saveCfg();showUse()}));
 $("prov").addEventListener("change",()=>{const p=PRESET[$("prov").value];cfg.model=p[1];cfg.base=p[0];cfgToUI();saveCfg()});
 /* ---------- New book ---------- */
@@ -430,7 +455,7 @@ const addKeys=()=>{const v=$("keyIn").value;if(!v.trim())return;setKeys([...keys
 $("keyAdd").onclick=addKeys;$("keyIn").addEventListener("keydown",e=>{if(e.key==="Enter")addKeys()});
 /* ---------- Backup ---------- */
 $("bk").onclick=async()=>{
-  const d={v:1,at:new Date().toISOString(),books:await all("books"),chunks:await all("chunks"),styles:await all("styles")};
+  const d={v:1,at:new Date().toISOString(),books:await all("books"),chunks:await all("chunks"),styles:await all("styles"),eds:await all("eds"),edch:await all("edch")};
   if($("bkKeys").checked)d.keys=keys();
   save(new Blob([JSON.stringify(d)],{type:"application/json"}),"dich-truyen-sao-luu-"+today()+".json");
 };
@@ -444,26 +469,245 @@ $("rsFile").onchange=async e=>{
     await tx("books","readwrite",s=>d.books.forEach(v=>s.put(v)));
     await tx("chunks","readwrite",s=>d.chunks.forEach(v=>s.put(v)));
     if(Array.isArray(d.styles))await tx("styles","readwrite",s=>d.styles.forEach(v=>s.put(v)));
+    if(Array.isArray(d.eds))await tx("eds","readwrite",s=>d.eds.forEach(v=>s.put(v)));
+    if(Array.isArray(d.edch))await tx("edch","readwrite",s=>d.edch.forEach(v=>s.put(v)));
     if(Array.isArray(d.keys))setKeys([...keys(),...d.keys]);
     books=await all("books");styles=await all("styles");books.forEach(b=>b.pending=b.pending||[]);
-    book=null;chunks=[];renderStyles();renderAll();alert("Đã khôi phục xong.");
+    eds=await all("eds");ed=null;edRows=[];book=null;chunks=[];renderStyles();renderAll();renderEdLib();renderEd();alert("Đã khôi phục xong.");
   }catch(err){alert("Không khôi phục được: "+err.message)}
+};
+/* ---------- Biên tập ---------- */
+let eds=[],ed=null,edRows=[],edRunning=false,edAbort=null,edShow=50,edOpen=new Set();
+const edSay=(t,e)=>{const s=$("edStatus");if(s){s.textContent=t;s.className=e?"e":""}else if(t)alert(t)};
+const edSave=()=>{ed.updated=Date.now();return put("eds",ed)};
+const CNN={零:0,〇:0,一:1,二:2,两:2,兩:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
+function cn2num(s){let n=0,c=0;for(const ch of s){if(ch in CNN)c=CNN[ch];else if(ch==="十"){n+=(c||1)*10;c=0}else if(ch==="百"){n+=(c||1)*100;c=0}else if(ch==="千"){n+=(c||1)*1000;c=0}}return n+c}
+function chNum(t){
+  let m=t.match(/第\s*(\d+)/);if(m)return+m[1];
+  m=t.match(/第\s*([零〇一二三四五六七八九十百千两兩]+)/);if(m)return cn2num(m[1]);
+  m=t.match(/(?:chương|chapter)\s+(\d+)/i);if(m)return+m[1];
+  m=t.match(/\d+/);return m?+m[0]:null;
+}
+async function readTxt(f){const b=await f.arrayBuffer();try{return new TextDecoder("utf-8",{fatal:true}).decode(b)}catch(e){return new TextDecoder("gb18030").decode(b)}}
+function chaptersOf(text){
+  const ls=text.replace(/\r/g,"").replace(/[\u00a0\u3000]/g," ").split("\n").map(x=>x.trim()).filter(Boolean);
+  let cur={title:"Phần đầu",lines:[]};const out=[cur];
+  for(const l of ls){if(l.length<=120&&CH.test(l)){cur={title:l,lines:[]};out.push(cur)}else cur.lines.push(l)}
+  const r=out.filter(c=>c.lines.length).map(c=>({title:c.title,text:c.lines.join("\n")}));
+  if(r.length===1&&r[0].title==="Phần đầu")r[0].title="Toàn văn";
+  return r;
+}
+function align(R,T){
+  const rn=R.map(c=>chNum(c.title)),tn=T.map(c=>chNum(c.title));
+  const ok=a=>{const v=a.filter(x=>x!=null);return v.length>0&&v.length>=a.length-1&&new Set(v).size===v.length};
+  if(R.length&&ok(rn)&&ok(tn)){
+    const m=new Map();R.forEach((c,i)=>{if(rn[i]!=null)m.set(rn[i],c)});
+    const nulls=R.filter((c,i)=>rn[i]==null);
+    return T.map((t,i)=>({t,r:tn[i]!=null?(m.get(tn[i])||null):(nulls.shift()||null)}));
+  }
+  return T.map((t,i)=>({t,r:R[i]||null}));
+}
+const edId=(pid,i)=>pid+":"+String(i).padStart(5,"0");
+async function createProject(p,rows){
+  p.id="e"+Date.now();p.updated=Date.now();p.n=rows.length;p.done=0;
+  const rs=rows.map((r,i)=>({id:edId(p.id,i),pid:p.id,idx:i,rawTitle:r.rawTitle||"",trTitle:r.trTitle||"",raw:r.raw||"",tr:r.tr||"",out:"",notes:"",status:"",accept:true}));
+  await put("eds",p);await tx("edch","readwrite",s=>rs.forEach(v=>s.put(v)));
+  eds.push(p);await openEd(p.id);
+}
+async function openEd(id){
+  if(edRunning){edSay("Hãy dừng biên tập hiện tại trước khi chuyển dự án.",1);return}
+  ed=eds.find(x=>x.id===id);
+  edRows=(await tx("edch","readonly",s=>s.index("pid").getAll(id))).sort((a,b)=>a.idx-b.idx);
+  edShow=50;edOpen=new Set();renderEdLib();renderEd();
+}
+async function deleteEd(p){
+  if(edRunning){alert("Hãy dừng biên tập trước khi xoá dự án.");return}
+  if(!confirm(`Xoá dự án biên tập "${p.title}"? Không hoàn tác được.`))return;
+  const ks=await tx("edch","readonly",s=>s.index("pid").getAllKeys(p.id));
+  await tx("edch","readwrite",s=>ks.forEach(k=>s.delete(k)));
+  await tx("eds","readwrite",s=>s.delete(p.id));
+  eds=eds.filter(x=>x.id!==p.id);if(ed&&ed.id===p.id){ed=null;edRows=[]}
+  renderEdLib();renderEd();
+}
+function renderEdLib(){
+  const L=$("edLib");L.textContent="";
+  if(!eds.length){L.append(el("p",{cls:"hint",textContent:"Chưa có dự án nào."}));return}
+  [...eds].sort((a,b)=>b.updated-a.updated).forEach(p=>L.append(el("div",{cls:"it"},
+    el("button",{cls:"bk"+(ed&&ed.id===p.id?" on":""),on:{click:()=>openEd(p.id)}},p.title,el("small",{textContent:(p.done||0)+"/"+(p.n||0)+" chương đã biên tập"})),
+    el("button",{cls:"sm d",textContent:"Xoá",on:{click:()=>deleteEd(p)}}))));
+}
+async function toEditor(b){
+  const old=eds.find(x=>x.from===b.id);
+  if(old&&confirm("Đã có dự án biên tập từ truyện này. Bấm OK để mở lại dự án đó, Hủy để tạo dự án mới.")){showTab("ed");await openEd(old.id);return}
+  const cs=(book&&book.id===b.id?chunks:await tx("chunks","readonly",s=>s.index("book").getAll(b.id))).slice().sort((x,y)=>x.idx-y.idx);
+  const multi=cs.some(x=>x.title!=="Mở đầu"),m=new Map();
+  for(const c of cs){
+    if(!c.tr||(multi&&c.title==="Mở đầu"))continue;
+    if(!m.has(c.ch))m.set(c.ch,{rawTitle:c.title,trTitle:c.title,raw:[],tr:[]});
+    const g=m.get(c.ch);if(c.titleTr)g.trTitle=c.titleTr;g.raw.push(c.src);g.tr.push(c.tr);
+  }
+  const rows=[...m.values()].map(g=>({rawTitle:g.rawTitle,trTitle:g.trTitle,raw:g.raw.join("\n"),tr:g.tr.join("\n")}));
+  if(!rows.length){alert("Truyện này chưa có đoạn nào đã dịch.");return}
+  showTab("ed");
+  await createProject({title:b.title+" (biên tập)",sl:b.sl,tl:b.tl,gl:b.gl||"",chars:b.chars||"",styleId:b.styleId||"",extra:"",model:"",from:b.id,opts:{spell:true,compare:true,gloss:true,pron:true,notes:true}},rows);
+}
+function charsFor(t,low){
+  t=(t||"").trim();if(t.length<=5000)return t;
+  return t.split("\n").filter(x=>x.trim()).filter((l,i)=>i<3||l.split(/[|:：=\t,，、/()（）\-–—]+/).map(x=>x.trim().toLowerCase()).some(x=>x.length>=2&&x.length<=40&&low.includes(x))).join("\n").slice(0,5000);
+}
+async function editPiece(pc,seg,mdl){
+  const o=ed.opts,low=(pc+seg).toLowerCase();
+  const g=parseGl(ed.gl).filter(([a,b])=>low.includes(a.toLowerCase())||(b&&low.includes(b.toLowerCase())));
+  const st=styles.find(s=>s.id===ed.styleId),tasks=[];
+  if(o.spell)tasks.push("Fix spelling, typos, missing or wrong diacritics, punctuation and obvious grammar errors.");
+  if(o.compare&&seg)tasks.push("Compare with the source passage: restore content that is missing from the translation (translate it in the same voice), fix mistranslated meaning, and remove content that is not in the source.");
+  if(o.gloss)tasks.push("Make names and terms consistent: use the glossary translations exactly, and unify variant renderings of the same name or term.");
+  if(o.pron)tasks.push("Check pronouns, forms of address and relationships (who speaks to whom) against the character table and the context, and correct mistakes.");
+  const sys=[`You are a meticulous editor and proofreader of fiction translated into ${ed.tl}.`,`The source language is ${ed.sl}.`,
+    "Apply ONLY these checks to the translated passage:\n- "+(tasks.join("\n- ")||"none"),
+    ...(st?["Keep the voice of this style guide:\n"+st.prompt]:[]),
+    ...(ed.extra.trim()?["Extra instructions from the reader: "+ed.extra.trim()]:[]),
+    "Rules: change as little as possible, keeping the existing wording wherever it is already correct; keep one paragraph per line and the same paragraph order; never summarize or add commentary inside the passage; output the COMPLETE revised passage.",
+    o.notes?"Output format: the revised passage first. Then on a new line exactly ===CHANGES=== followed by at most 6 short bullet points in Vietnamese describing the main fixes (write: Không có thay đổi, if nothing was changed).":"Output ONLY the revised passage."].join("\n");
+  let u="";
+  if(g.length)u+="Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n";
+  const cb=charsFor(ed.chars,low);if(cb)u+="Character and relationship table:\n"+cb+"\n\n";
+  if(seg)u+="<source>\n"+seg+"\n</source>\n\n";
+  u+="<translation>\n"+pc+"\n</translation>";
+  const raw=await ask(sys,u,edAbort.signal,mdl);
+  let text=raw,notes="";const i=raw.indexOf("===CHANGES===");
+  if(i>=0){text=raw.slice(0,i);notes=raw.slice(i+13).trim()}
+  text=text.replace(/^\s*<translation>\s*/i,"").replace(/\s*<\/translation>\s*$/i,"").trim();
+  return{text,notes};
+}
+async function editChapter(r,mdl){
+  const T=r.tr,useRaw=ed.opts.compare&&r.raw,rawLen=useRaw?r.raw.length:0,single=T.length+rawLen<=14000;
+  const pcs=single?[T]:splitText(T,4500);let acc=0;const outs=[],notes=[];
+  for(const pc of pcs){
+    let seg="";
+    if(useRaw)seg=single?r.raw:r.raw.slice(Math.max(0,Math.floor((acc/T.length-.12)*rawLen)),Math.min(rawLen,Math.ceil(((acc+pc.length)/T.length+.12)*rawLen)));
+    acc+=pc.length;
+    const x=await editPiece(pc,seg,mdl);outs.push(x.text);if(x.notes)notes.push(x.notes);
+  }
+  const out=outs.join("\n").trim(),ratio=out.length/Math.max(1,T.length);
+  r.out=out;r.notes=notes.join("\n");r.status=(ratio<.7||ratio>1.6)?"warn":"ok";r.accept=r.status==="ok";
+  if(r.status==="warn")r.notes="⚠ Độ dài bản sửa chỉ còn "+Math.round(ratio*100)+"% so với bản cũ, hãy xem kỹ trước khi dùng.\n"+r.notes;
+}
+async function runEd(only){
+  if(edRunning||!ed)return;
+  const mdl=(ed.model||"").trim()||cfg.model.trim(),o=ed.opts;
+  if(!keys().length||!mdl){edSay("Hãy nhập API key và model ở mục Kết nối AI (tab Dịch truyện).",1);return}
+  if(!(o.spell||o.compare||o.gloss||o.pron)){edSay("Hãy chọn ít nhất một việc cần làm.",1);return}
+  edRunning=true;edAbort=new AbortController();lock();renderEd();
+  try{
+    for(const r of (only||edRows)){
+      if(r.status)continue;
+      if(cfg.cap>0&&usage().n>=cfg.cap){edSay(`Đã dùng đủ ${cfg.cap} lượt hôm nay. Tiến độ đã lưu, hãy quay lại vào ngày mai.`);break}
+      edSay(`Đang biên tập chương ${r.idx+1}/${edRows.length}…`);
+      await editChapter(r,mdl);
+      await put("edch",r);ed.done=edRows.filter(x=>x.status).length;await edSave();bump();renderEd();renderEdLib();
+      await sleep(Math.max(0,cfg.delay)*1000,edAbort.signal);
+    }
+    if(edRows.every(x=>x.status))edSay("Hoàn tất biên tập toàn bộ.");
+  }catch(e){
+    if(e.name==="AbortError")edSay("Đã dừng. Tiến độ đã lưu.");
+    else if(e.quota)edSay("Có vẻ đã hết hạn mức của key. Tiến độ đã lưu, hãy bấm Tiếp tục sau khi hạn mức được làm mới.",1);
+    else edSay("Lỗi: "+e.message+". Tiến độ đã lưu, bấm Tiếp tục để thử lại.",1);
+  }
+  edRunning=false;unlock();renderEd();renderEdLib();
+}
+async function redoRow(r){if(edRunning)return;r.status="";r.out="";r.notes="";await put("edch",r);runEd([r])}
+const edFinal=()=>edRows.map(r=>({title:r.trTitle||("Chương "+(r.idx+1)),text:(r.accept&&r.out)?r.out:r.tr}));
+function edEpub(){if(!edRows.length)return;epubFrom(ed.title,ed.tl,edFinal());edSay(`Đã xuất EPUB: ${edRows.length} chương (chương chưa biên tập giữ nguyên bản dịch cũ).`)}
+function edTxt(){if(!edRows.length)return;save(new Blob([edFinal().map(c=>c.title+"\n\n"+c.text).join("\n\n\n")],{type:"text/plain;charset=utf-8"}),ed.title.replace(/[\\/:*?"<>|]+/g,"_")+".txt");edSay("Đã xuất TXT.")}
+function renderEd(){
+  const W=$("edWs");W.textContent="";
+  if(!ed){W.append(el("section",{},el("p",{cls:"hint",textContent:"Chọn một dự án hoặc tạo dự án mới từ file. Truyện đã dịch xong ở tab Dịch truyện có nút Biên tập để chuyển sang đây."})));return}
+  const dis=edRunning,o=ed.opts,done=edRows.filter(r=>r.status).length,withRaw=edRows.filter(r=>r.raw).length,pct=edRows.length?done/edRows.length*100:0;
+  const head=el("section",{},
+    el("input",{value:ed.title,"aria-label":"Tên dự án",style:"font:600 17px Georgia,serif;margin-bottom:6px",on:{change:async e=>{const v=e.target.value.trim();if(v){ed.title=v;await edSave();renderEdLib()}else e.target.value=ed.title}}}),
+    el("div",{cls:"bar"},el("i",{style:"width:"+pct+"%"})),
+    el("p",{cls:"hint",textContent:`Đã biên tập ${done}/${edRows.length} chương. Có bản gốc tương ứng: ${withRaw}/${edRows.length} chương.`}),
+    el("div",{cls:"row",style:"margin:10px 0"},
+      edRunning?el("button",{textContent:"Dừng",on:{click:()=>edAbort.abort()}}):el("button",{cls:"p",textContent:done?"Tiếp tục biên tập":"Bắt đầu biên tập",on:{click:()=>runEd()}}),
+      el("button",{textContent:"Xuất EPUB",on:{click:edEpub}}),el("button",{textContent:"Xuất .txt",on:{click:edTxt}})),
+    el("div",{id:"edStatus",role:"status"}));
+  const ck=(k,l)=>el("label",{cls:"chk"},el("input",{type:"checkbox",checked:o[k],disabled:dis,on:{change:async e=>{o[k]=e.target.checked;await edSave()}}})," "+l);
+  const ss=el("select",{disabled:dis,on:{change:async e=>{ed.styleId=e.target.value;await edSave()}}},el("option",{value:"",textContent:"(Không dùng văn phong)"}));
+  styles.forEach(s=>ss.append(el("option",{value:s.id,textContent:s.name,selected:s.id===ed.styleId})));
+  const ta=(label,key,ph,h)=>[el("label",{textContent:label}),el("textarea",{value:ed[key]||"",placeholder:ph,disabled:dis,style:"min-height:"+h+"px",on:{change:async e=>{ed[key]=e.target.value;await edSave()}}})];
+  const opt=el("section",{},el("h2",{textContent:"Việc cần làm"}),
+    ck("spell","Soát chính tả, dấu câu, lỗi ngữ pháp"),ck("compare","So sánh với bản gốc: bổ sung phần dịch thiếu, sửa dịch sai nghĩa"),
+    ck("gloss","Thống nhất thuật ngữ và tên riêng theo bảng chuẩn"),ck("pron","Soát xưng hô và quan hệ giữa các nhân vật"),ck("notes","Ghi chú các thay đổi chính của mỗi chương"),
+    el("div",{cls:"row"},el("div",{},el("label",{textContent:"Văn phong giữ khi sửa"}),ss),
+      el("div",{},el("label",{textContent:"Model riêng cho biên tập"}),el("input",{value:ed.model||"",placeholder:"Để trống = model ở Kết nối AI",disabled:dis,on:{change:async e=>{ed.model=e.target.value;await edSave()}}}))),
+    ...ta("Hướng dẫn thêm (tùy chọn)","extra","Ví dụ: giữ giọng cổ trang, không đổi cách xưng hô đã thống nhất…",70),
+    ...ta("Bảng thuật ngữ và tên riêng (Gốc = Dịch)","gl","Gốc = Dịch",120),
+    ...ta("Bảng nhân vật và quan hệ","chars","Tên gốc | Tên dịch | Giới tính | Xưng hô | Quan hệ",120));
+  const list=el("section",{},el("h2",{textContent:"Các chương"}),el("p",{cls:"hint",textContent:"Chương chưa biên tập hoặc không chọn \"Dùng bản đã sửa\" sẽ giữ nguyên bản dịch cũ khi xuất file."}));
+  edRows.slice(0,edShow).forEach(r=>{
+    const open=edOpen.has(r.id),badge={ok:"Đã sửa",warn:"Cần xem lại","":"Chưa xử lý"}[r.status];
+    list.append(el("div",{cls:"tm",style:"grid-template-columns:2.4em 1fr auto auto"},el("span",{textContent:r.idx+1}),
+      el("span",{textContent:(r.trTitle||"(không tên)")+" · "+badge+(r.raw?"":" · không có bản gốc")}),
+      el("button",{textContent:open?"Đóng":"Xem",on:{click:()=>{open?edOpen.delete(r.id):edOpen.add(r.id);renderEd()}}}),
+      el("button",{textContent:"Làm lại",disabled:dis,on:{click:()=>redoRow(r)}})));
+    if(open){
+      const d=el("div",{style:"margin:4px 0 12px"});
+      if(r.status){
+        d.append(el("label",{cls:"chk"},el("input",{type:"checkbox",checked:r.accept,on:{change:async e=>{r.accept=e.target.checked;await put("edch",r)}}})," Dùng bản đã sửa khi xuất file"));
+        if(r.notes)d.append(el("pre",{cls:"nt",textContent:r.notes}));
+        d.append(el("label",{textContent:"Bản đã sửa (có thể chỉnh tay)"}),el("textarea",{value:r.out,style:"min-height:180px",on:{change:async e=>{r.out=e.target.value;await put("edch",r)}}}));
+      }
+      d.append(el("label",{textContent:"Bản dịch hiện có"}),el("textarea",{value:r.tr,readOnly:true,style:"min-height:120px"}));
+      if(r.raw)d.append(el("label",{textContent:"Bản gốc"}),el("textarea",{value:r.raw,readOnly:true,style:"min-height:120px"}));
+      list.append(d);
+    }
+  });
+  if(edRows.length>edShow)list.append(el("button",{textContent:`Hiện thêm (còn ${edRows.length-edShow} chương)`,on:{click:()=>{edShow+=50;renderEd()}}}));
+  W.append(head,opt,list);
+}
+$("edGlFile").onclick=()=>$("edGlIn").click();
+$("edGlIn").onchange=async e=>{const f=e.target.files[0];if(f)$("edGl").value=await readTxt(f);e.target.value=""};
+$("edGo").onclick=async()=>{
+  const ft=$("edTr").files[0],fr=$("edRaw").files[0];
+  if(!ft){alert("Hãy chọn file bản dịch (.txt).");return}
+  const T=chaptersOf(await readTxt(ft)),R=fr?chaptersOf(await readTxt(fr)):[];
+  if(!T.length){alert("File bản dịch không có nội dung.");return}
+  const pr=align(R,T),m=pr.filter(x=>x.r).length;
+  await createProject({title:$("edTitle").value.trim()||ft.name.replace(/\.txt$/i,""),sl:$("edSl").value,tl:$("edTl").value,gl:$("edGl").value,chars:"",styleId:"",extra:"",model:"",from:"",opts:{spell:true,compare:true,gloss:true,pron:true,notes:true}},
+    pr.map(({t,r})=>({rawTitle:r?r.title:"",trTitle:t.title,raw:r?r.text:"",tr:t.text})));
+  edSay(`Đã tạo dự án: ${T.length} chương dịch, ${R.length} chương gốc, ghép được ${m}.`);
+};
+/* ---------- Nhận truyện từ tab Cào truyện ---------- */
+window.importChapters=async o=>{
+  const id="b"+Date.now(),cs=[];let idx=0;
+  (o.chapters||[]).forEach((c,ci)=>{
+    let t=String(c.title||"").trim();if(!t||t==="Mở đầu")t=t?"Lời mở đầu":"Chương "+(ci+1);
+    splitText((c.lines||[]).join("\\n"),cfg.max||3000).forEach(s=>cs.push({id:id+":"+String(idx).padStart(6,"0"),bookId:id,idx:idx++,ch:ci,title:t,src:s,tr:""}));
+  });
+  if(!cs.length)throw new Error("Không có nội dung để đưa vào.");
+  const b={id,title:o.title||"Truyện mới",sl:o.sl||"Tự nhận diện",tl:o.tl||"Tiếng Việt",styleId:styles[0].id,gl:"",chars:"",pending:[],updated:Date.now(),done:0,total:cs.length};
+  await put("books",b);await tx("chunks","readwrite",s=>cs.forEach(v=>s.put(v)));
+  books.push(b);showTab("tr");
+  if(running)renderAll();else await openBook(id);
+  say(`Đã đưa vào từ tab Cào truyện: ${new Set(cs.map(c=>c.ch)).size} chương, ${cs.length} đoạn.`);
+  return{chapters:new Set(cs.map(c=>c.ch)).size,chunks:cs.length};
 };
 /* ---------- Tab chính ---------- */
 function showTab(n){
-  const sc=n==="sc";$("tabTr").hidden=sc;$("tabSc").hidden=!sc;
-  $("mt1").setAttribute("aria-selected",String(!sc));$("mt2").setAttribute("aria-selected",String(sc));
-  if(sc&&!$("scFrame").getAttribute("src"))$("scFrame").setAttribute("src","cao-truyen.html");
+  const M={tr:["tabTr","mt1"],sc:["tabSc","mt2"],ed:["tabEd","mt3"]};
+  for(const k in M){$(M[k][0]).hidden=k!==n;$(M[k][1]).setAttribute("aria-selected",String(k===n))}
+  if(n==="sc"&&!$("scFrame").getAttribute("src"))$("scFrame").setAttribute("src","cao-truyen.html");
   try{localStorage.setItem("dichtruyen:tab",n)}catch(e){}
 }
-$("mt1").onclick=()=>showTab("tr");$("mt2").onclick=()=>showTab("sc");
-try{if(localStorage.getItem("dichtruyen:tab")==="sc")showTab("sc")}catch(e){}
+$("mt1").onclick=()=>showTab("tr");$("mt2").onclick=()=>showTab("sc");$("mt3").onclick=()=>showTab("ed");
+try{const t=localStorage.getItem("dichtruyen:tab");if(t==="sc"||t==="ed")showTab(t)}catch(e){}
 /* ---------- Init ---------- */
 (async()=>{
-  db=await openDB();books=await all("books");styles=await all("styles");
+  db=await openDB();books=await all("books");styles=await all("styles");eds=await all("eds");
   if(!styles.length){for(const [n,p] of SEED){const s={id:"s"+Math.random().toString(36).slice(2,9),name:n,prompt:p};await put("styles",s);styles.push(s)}}
   books.forEach(b=>b.pending=b.pending||[]);
-  cfgToUI();renderStyles();renderAll();
+  cfgToUI();renderStyles();renderAll();renderEdLib();renderEd();
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 })();
 if("serviceWorker" in navigator&&location.protocol.startsWith("http"))addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));

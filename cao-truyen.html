@@ -31,21 +31,30 @@ button.b:disabled{opacity:.4;cursor:not-allowed}
 .chk{display:flex;gap:8px;align-items:center;font:.9rem system-ui,sans-serif;margin:10px 0 0;font-weight:400}
 .chk input{width:auto}
 progress{width:100%;height:10px;margin-top:14px;accent-color:var(--acc)}
-pre#log,pre#log2{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;height:150px;overflow:auto;font:.8rem/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;margin:10px 0 0}
+pre#log,pre#log2,pre#log3{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;height:150px;overflow:auto;font:.8rem/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;margin:10px 0 0}
 code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.82rem;word-break:break-all}
 .note{color:var(--warn);font:.82rem/1.45 system-ui,sans-serif;margin-top:20px}
 .drop{border:2px dashed var(--line);border-radius:8px;padding:28px 12px;text-align:center;background:var(--card);cursor:pointer;font-family:system-ui,sans-serif}
 .drop.on{border-color:var(--acc)}
+button.s{padding:5px 9px;border-radius:5px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:600 .8rem system-ui,sans-serif;cursor:pointer}
+button.s:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.fr{display:flex;gap:6px;align-items:center;margin:4px 0;font:.88rem system-ui,sans-serif}.fr span{flex:1;overflow-wrap:anywhere}
+.chr{display:grid;grid-template-columns:2.4em 1fr auto;gap:6px;align-items:center;margin:5px 0;font:.85rem system-ui,sans-serif}
+.chr input{padding:7px 9px}.cb{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.ep{margin:0 0 8px}.ep textarea{min-height:200px;font:.9rem/1.5 system-ui,sans-serif}
+#t3info{color:var(--mute);font:.85rem system-ui,sans-serif;margin:12px 0 4px}
+@media(max-width:560px){.chr{grid-template-columns:2.2em 1fr}.chr .cb{grid-column:1/-1}}
 </style>
 </head>
 <body>
 <main>
 <h1>Đóng gói truyện</h1>
-<p class="sub">Tải truyện online thành EPUB / TXT, hoặc đổi EPUB sang TXT. Chạy hoàn toàn trên trình duyệt.</p>
+<p class="sub">Tải truyện online thành EPUB / TXT, đổi EPUB sang TXT, hoặc ghép một/nhiều file TXT thành EPUB. Chạy hoàn toàn trên trình duyệt.</p>
 
 <div class="tabs" role="tablist">
   <button role="tab" aria-selected="true" data-t="t1">Tải truyện từ link</button>
   <button role="tab" aria-selected="false" data-t="t2">EPUB → TXT</button>
+  <button role="tab" aria-selected="false" data-t="t3">TXT → EPUB</button>
 </div>
 
 <section id="t1">
@@ -113,6 +122,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.82rem;word-bre
   <div class="btns">
     <button class="b" id="dlEpub" disabled>Tải EPUB (có mục lục)</button>
     <button class="b" id="dlTxt" disabled>Tải TXT</button>
+    <button class="b o toTr" id="toTr1" disabled>Đưa vào Dịch truyện</button>
   </div>
   <label for="txtEnc">Mã hóa file TXT</label>
   <select id="txtEnc">
@@ -143,6 +153,36 @@ return new Response(x.body,{status:x.status,headers:h})}}</code></pre>
   <div class="btns"><button class="b" id="dlTxt2" disabled>Tải TXT</button></div>
 </section>
 
+<section id="t3" hidden>
+  <label class="drop" id="drop3" for="f3">Chọn hoặc kéo thả một hoặc nhiều file .txt (các phần nối tiếp nhau, cùng cấu trúc)</label>
+  <input id="f3" type="file" accept=".txt,text/plain" multiple hidden>
+  <div id="t3files"></div>
+  <div class="row">
+    <div><label for="title3">Tên truyện</label><input id="title3" placeholder="Để trống = lấy theo tên file đầu"></div>
+    <div><label for="author3">Tác giả</label><input id="author3" placeholder="Không bắt buộc"></div>
+  </div>
+  <div class="row">
+    <div><label for="lang3">Ngôn ngữ truyện (gắn vào EPUB)</label><select id="lang3"><option value="zh">Trung</option><option value="vi">Việt</option><option value="en">Anh</option><option value="ja">Nhật</option><option value="ko">Hàn</option></select></div>
+    <div><label for="enc3">Bảng mã của file txt</label><select id="enc3"><option value="auto">Tự nhận diện (khuyên dùng)</option><option value="utf-8">UTF-8</option><option value="gb18030">GBK / GB2312 / GB18030</option><option value="big5">Big5</option><option value="shift_jis">Shift_JIS</option><option value="euc-kr">EUC-KR</option><option value="utf-16le">UTF-16 LE</option></select></div>
+  </div>
+  <div class="row">
+    <div><label for="mode3">Cách chia chương</label><select id="mode3"><option value="head">Theo dòng tiêu đề chương (tự nhận diện)</option><option value="file">Mỗi file là một chương</option></select></div>
+    <div><label for="re3">Mẫu tiêu đề tự đặt (regex, tùy chọn)</label><input id="re3" placeholder="Ví dụ: ^Vol\.\s*\d+"></div>
+  </div>
+  <label class="chk"><input type="checkbox" id="skip3" checked> Bỏ phần trước chương 1 (giới thiệu, quảng cáo, link thừa…)</label>
+  <label for="filter3">Xóa dòng chứa từ khóa (mỗi dòng một từ khóa, dùng để bỏ quảng cáo)</label>
+  <textarea id="filter3" rows="2"></textarea>
+  <div class="btns"><button class="b" id="parse3" disabled>Đọc và chia lại chương (xóa chỉnh sửa)</button></div>
+  <pre id="log3" aria-live="polite"></pre>
+  <div id="t3info"></div>
+  <div id="t3list"></div>
+  <div class="btns">
+    <button class="b" id="dlEpub3" disabled>Tải EPUB (có mục lục)</button>
+    <button class="b o" id="dlTxt3" disabled>Tải TXT</button>
+    <button class="b o toTr" id="toTr3" disabled>Đưa vào Dịch truyện</button>
+  </div>
+</section>
+
 <p class="note">Chỉ tải những truyện bạn có quyền đọc/lưu và dùng cho mục đích cá nhân. Hãy tôn trọng điều khoản và bản quyền của trang nguồn.</p>
 </main>
 
@@ -156,7 +196,7 @@ let abort=false, book=null, epubTxt=null, epubName='truyen';
 /* ---------- Tabs ---------- */
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));
-  ['t1','t2'].forEach(id=>$('#'+id).hidden=id!==b.dataset.t);
+  ['t1','t2','t3'].forEach(id=>$('#'+id).hidden=id!==b.dataset.t);
 });
 $('#proxy').onchange=e=>$('#customProxy').hidden=e.target.value!=='custom';
 
@@ -257,7 +297,7 @@ $('#stop').onclick=()=>{abort=true};
 $('#go').onclick=async()=>{
   const url=$('#url').value.trim();
   if(!url){log('Hãy nhập link trang mục lục.');return}
-  abort=false; book=null; $('#log').textContent=''; $('#dlEpub').disabled=$('#dlTxt').disabled=true;
+  abort=false; book=null; $('#log').textContent=''; $('#dlEpub').disabled=$('#dlTxt').disabled=$('#toTr1').disabled=true;
   busy(true);
   try{
     log('Đang tải trang mục lục…');
@@ -289,7 +329,7 @@ $('#go').onclick=async()=>{
     await Promise.all(Array.from({length:N},worker));
     if(abort){log('Đã dừng.');return}
     book={title,author:$('#author').value.trim(),lang:$('#lang').value,chapters:links.map((l,i)=>({title:l.title,lines:res[i]||[]}))};
-    $('#dlEpub').disabled=$('#dlTxt').disabled=false;
+    $('#dlEpub').disabled=$('#dlTxt').disabled=$('#toTr1').disabled=false;
     log('✅ Xong. Bấm nút tải bên dưới.');
   }catch(e){
     log('❌ '+e.message+(/Failed to fetch|Load failed|NetworkError/i.test(e.message)?' → Không kết nối được proxy. Có thể: Worker từ chối (sai ALLOW), Worker bị lỗi, hoặc trang nguồn chặn proxy. Mở địa chỉ Worker trực tiếp trong trình duyệt để xem lỗi thật.':''));
@@ -391,6 +431,133 @@ const dz=$('#drop');
 ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('on')}));
 dz.addEventListener('drop',e=>handleFile(e.dataTransfer.files[0]));
 $('#dlTxt2').onclick=()=>epubTxt&&save(txtBlob(epubTxt,'auto'),safe(epubName)+'.txt');
+
+/* ---------- Đưa vào Dịch truyện (khi nhúng trong ứng dụng Dịch truyện) ---------- */
+const embedded=(()=>{try{return window.parent!==window&&typeof window.parent.importChapters==='function'}catch(e){return false}})();
+document.querySelectorAll('.toTr').forEach(b=>b.hidden=!embedded);
+const LANGS={zh:'Tiếng Trung',en:'Tiếng Anh',ja:'Tiếng Nhật',ko:'Tiếng Hàn',vi:'Tiếng Việt'};
+async function toTranslator(b,lg,btn){
+  try{
+    if(!embedded) throw new Error('Chức năng này chỉ hoạt động khi mở trong ứng dụng Dịch truyện.');
+    const r=await window.parent.importChapters({title:b.title,sl:LANGS[b.lang]||'Tự nhận diện',tl:b.lang==='vi'?'Tiếng Anh':'Tiếng Việt',chapters:b.chapters});
+    lg(`✅ Đã đưa vào Dịch truyện: ${r.chapters} chương, ${r.chunks} đoạn.`);
+    if(btn) btn.disabled=true;
+  }catch(e){ lg('❌ '+e.message) }
+}
+$('#toTr1').onclick=()=>book&&toTranslator(book,log,$('#toTr1'));
+
+/* ---------- TXT → EPUB (một hoặc nhiều file txt, có biên tập) ---------- */
+const log3=logTo('#log3');
+const t3={files:[],chapters:[],show:100};
+const HEAD=/^\s*(?:第\s*[\d零〇一二三四五六七八九十百千两兩壹貳參叁肆伍陸柒捌玖拾]+\s*[章回节節卷集话話部篇].{0,60}|(?:chapter|chương)\s+(?:[\dIVXLC]+|one|two|three|four|five|six|seven|eight|nine|ten)\b.{0,80}|(?:序章|序言|楔子|引子|前言|后记|後記|尾声|尾聲|番外).{0,40}|(?:prologue|epilogue|lời nói đầu|mở đầu)\b.{0,60})\s*$/i;
+function decodeTxt(buf,enc){
+  if(enc&&enc!=='auto') return new TextDecoder(enc).decode(buf);
+  const u=new Uint8Array(buf);
+  if(u[0]===0xFF&&u[1]===0xFE) return new TextDecoder('utf-16le').decode(buf);
+  if(u[0]===0xFE&&u[1]===0xFF) return new TextDecoder('utf-16be').decode(buf);
+  try{return new TextDecoder('utf-8',{fatal:true}).decode(buf)}
+  catch(e){return new TextDecoder('gb18030').decode(buf)}
+}
+function mkb(t,title,fn){const b=document.createElement('button');b.type='button';b.className='s';b.textContent=t;if(title)b.title=title;b.onclick=fn;return b}
+function renderFiles(){
+  const box=$('#t3files');box.textContent='';
+  const mv=(i,j)=>{if(j<0||j>=t3.files.length)return;[t3.files[i],t3.files[j]]=[t3.files[j],t3.files[i]];renderFiles()};
+  t3.files.forEach((f,i)=>{
+    const r=document.createElement('div');r.className='fr';
+    const n=document.createElement('span');n.textContent=`${i+1}. ${f.name} (${Math.max(1,Math.round(f.buf.byteLength/1024))} KB)`;
+    r.append(n,mkb('↑','Đưa lên',()=>mv(i,i-1)),mkb('↓','Đưa xuống',()=>mv(i,i+1)),mkb('✕','Bỏ file này',()=>{t3.files.splice(i,1);renderFiles()}));
+    box.append(r);
+  });
+  if(t3.files.length>1) box.append(mkb('Sắp xếp theo tên','',()=>{t3.files.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));renderFiles()}));
+  $('#parse3').disabled=!t3.files.length;
+}
+async function addFiles(list){
+  const fs=[...list].filter(f=>/\.txt$/i.test(f.name)||f.type==='text/plain').sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+  if(!fs.length){log3('⚠ Chỉ nhận file .txt.');return}
+  for(const f of fs) t3.files.push({name:f.name,buf:await f.arrayBuffer()});
+  renderFiles(); parseT3();
+}
+function parseT3(){
+  if(!t3.files.length) return;
+  const enc=$('#enc3').value, mode=$('#mode3').value, skip=$('#skip3').checked;
+  const bad=$('#filter3').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  let re=HEAD; const cr=$('#re3').value.trim();
+  if(cr){try{re=new RegExp(cr,'i')}catch(e){log3('❌ Mẫu regex không hợp lệ: '+e.message);return}}
+  const clean=t=>t.replace(/\r/g,'').replace(/[\u00a0\u3000]/g,' ').split('\n').map(s=>s.trim()).filter(l=>l&&!bad.some(k=>l.includes(k)));
+  let chs=[];
+  try{
+    if(mode==='file'){
+      for(const f of t3.files){
+        const ls=clean(decodeTxt(f.buf,enc)); if(!ls.length) continue;
+        const title=ls[0].length<=60?ls.shift():f.name.replace(/\.txt$/i,'');
+        chs.push({title,text:ls.join('\n')});
+      }
+    }else{
+      const ls=t3.files.flatMap(f=>clean(decodeTxt(f.buf,enc)));
+      const pre={title:'Phần mở đầu',lines:[]}, named=[]; let cur=pre;
+      for(const l of ls){ if(l.length<=100&&re.test(l)){cur={title:l,lines:[]};named.push(cur)} else cur.lines.push(l) }
+      if(!named.length) chs=[{title:$('#title3').value.trim()||'Toàn văn',text:pre.lines.join('\n')}];
+      else{
+        let use=named;
+        if(skip){
+          const i=named.findIndex(c=>CH1.test(c.title)); if(i>0) use=named.slice(i);
+          if(pre.lines.length||i>0) log3(`Đã bỏ phần trước chương 1 (${pre.lines.length} dòng${i>0?', '+i+' mục tiêu đề':''}).`);
+        }else if(pre.lines.length) use=[pre,...named];
+        chs=use.filter(c=>c.lines.length).map(c=>({title:c.title,text:c.lines.join('\n')}));
+      }
+    }
+  }catch(e){log3('❌ '+e.message);return}
+  t3.chapters=chs.filter(c=>c.text); t3.show=100;
+  if(!$('#title3').value.trim()) $('#title3').value=t3.files[0].name.replace(/\.txt$/i,'');
+  log3(`✅ ${t3.chapters.length} chương từ ${t3.files.length} file.`);
+  renderT3();
+}
+function renderT3(){
+  const box=$('#t3list'), C=t3.chapters; box.textContent='';
+  const tot=C.reduce((n,c)=>n+c.text.length,0);
+  $('#t3info').textContent=C.length?`${C.length} chương, ${tot.toLocaleString('vi-VN')} ký tự. Chỉnh tên, thứ tự, gộp hoặc xóa chương trước khi tạo EPUB.`:'';
+  const swap=(i,j)=>{if(j<0||j>=C.length)return;[C[i],C[j]]=[C[j],C[i]];renderT3()};
+  C.slice(0,t3.show).forEach((c,i)=>{
+    const r=document.createElement('div'); r.className='chr';
+    const n=document.createElement('span'); n.textContent=i+1;
+    const inp=document.createElement('input'); inp.value=c.title; inp.setAttribute('aria-label','Tên chương '+(i+1)); inp.oninput=()=>{c.title=inp.value};
+    const cb=document.createElement('div'); cb.className='cb';
+    const sz=document.createElement('small'); sz.style.display='inline'; sz.textContent=c.text.length+' ký tự';
+    cb.append(sz,mkb('↑','Đưa lên',()=>swap(i,i-1)),mkb('↓','Đưa xuống',()=>swap(i,i+1)),
+      mkb('Gộp ↓','Gộp với chương kế tiếp',()=>{if(C[i+1]){c.text+='\n'+C[i+1].text;C.splice(i+1,1);renderT3()}}),
+      mkb('Sửa','Sửa nội dung chương',()=>{c.open=!c.open;renderT3()}),
+      mkb('✕','Xóa chương',()=>{C.splice(i,1);renderT3()}));
+    r.append(n,inp,cb); box.append(r);
+    if(c.open){
+      const ep=document.createElement('div'); ep.className='ep';
+      const ta=document.createElement('textarea'); ta.value=c.text; ta.oninput=()=>{c.text=ta.value;sz.textContent=c.text.length+' ký tự'};
+      const bb=document.createElement('div'); bb.className='cb'; bb.style.marginTop='6px';
+      bb.append(mkb('Xóa các chương phía trên','',()=>{if(i>0&&confirm(`Xóa ${i} chương phía trên?`)){C.splice(0,i);renderT3()}}),
+        mkb('Xóa từ chương này trở xuống','',()=>{if(confirm(`Xóa ${C.length-i} chương từ đây trở xuống?`)){C.splice(i);renderT3()}}));
+      ep.append(ta,bb); box.append(ep);
+    }
+  });
+  if(C.length>t3.show) box.append(mkb(`Hiện thêm (còn ${C.length-t3.show} chương)`,'',()=>{t3.show+=100;renderT3()}));
+  ['#dlEpub3','#dlTxt3','#toTr3'].forEach(s=>$(s).disabled=!C.length);
+}
+function t3Book(){
+  const ch=t3.chapters.map(c=>({title:c.title.trim()||'(không tên)',lines:c.text.split('\n').map(s=>s.trim()).filter(Boolean)})).filter(c=>c.lines.length);
+  if(!ch.length) throw new Error('Chưa có chương nào.');
+  return {title:$('#title3').value.trim()||'Truyen',author:$('#author3').value.trim(),lang:$('#lang3').value,chapters:ch};
+}
+$('#parse3').onclick=parseT3;
+$('#f3').onchange=e=>{const l=[...e.target.files];e.target.value='';addFiles(l)};
+const dz3=$('#drop3');
+['dragover','dragenter'].forEach(ev=>dz3.addEventListener(ev,e=>{e.preventDefault();dz3.classList.add('on')}));
+['dragleave','drop'].forEach(ev=>dz3.addEventListener(ev,e=>{e.preventDefault();dz3.classList.remove('on')}));
+dz3.addEventListener('drop',e=>addFiles([...e.dataTransfer.files]));
+$('#dlEpub3').onclick=async()=>{
+  try{const b=t3Book();$('#dlEpub3').disabled=true;save(await buildEpub(b),safe(b.title)+'.epub');log3(`✅ Đã tạo EPUB: ${b.chapters.length} chương.`)}
+  catch(e){log3('❌ '+e.message)}
+  $('#dlEpub3').disabled=!t3.chapters.length;
+};
+$('#dlTxt3').onclick=()=>{try{const b=t3Book();save(txtBlob(bookText(b),'auto'),safe(b.title)+'.txt')}catch(e){log3('❌ '+e.message)}};
+$('#toTr3').onclick=()=>{try{toTranslator(t3Book(),log3,$('#toTr3'))}catch(e){log3('❌ '+e.message)}};
 </script>
 </body>
 </html>
