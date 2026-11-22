@@ -1,10 +1,11 @@
 // Service worker: cho phép cài app và mở giao diện khi mất mạng.
-// Các lệnh gọi API (Gemini, OpenAI...) là cross-origin nên không bao giờ bị cache ở đây.
-const CACHE = "dich-truyen-v1";
-const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
+// Các lệnh gọi API và proxy là cross-origin nên không bao giờ bị cache ở đây.
+const CACHE = "dich-truyen-v2";
+const SHELL = ["./", "index.html", "cao-truyen.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+  // Cache từng file riêng, thiếu một file không làm hỏng cả quá trình cài.
+  e.waitUntil(caches.open(CACHE).then((c) => Promise.all(SHELL.map((u) => c.add(u).catch(() => {})))));
   self.skipWaiting();
 });
 
