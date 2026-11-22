@@ -627,6 +627,27 @@ function openFs(r){
     wrap);
   document.body.append(ov);
 }
+async function fixTitle(r){
+  if(edRunning)return;
+  const mdl=(ed.model||"").trim()||cfg.model.trim();
+  if(!keys().length||!mdl){edSay("Hãy nhập API key và model ở mục Kết nối AI.",1);return}
+  try{
+    edAbort=new AbortController();
+    edSay("Đang dịch tiêu đề…");
+    r.trTitle=(await repairHan(r.trTitle||"",mdl)).trim();
+    await put("edch",r);bump();
+    edSay("Đã cập nhật tiêu đề chương.");renderEd();renderEdLib();
+  }catch(e){edSay("Lỗi khi dịch tiêu đề: "+e.message,1)}
+}
+function titleRow(r,dis){
+  const hasCjk=CJK1.test(r.trTitle||"");
+  return el("div",{},
+    el("label",{textContent:"Tên chương"}),
+    el("div",{cls:"row"},
+      el("input",{value:r.trTitle||"",disabled:dis,"aria-label":"Tên chương",on:{change:async e=>{r.trTitle=e.target.value.trim();await put("edch",r);renderEd();renderEdLib()}}}),
+      el("button",{textContent:"Dịch tiêu đề bằng AI",disabled:dis||!hasCjk,on:{click:()=>fixTitle(r)}})),
+    el("p",{cls:"hint",textContent:hasCjk?"⚠ Tên chương còn chữ Trung. Sửa tay hoặc bấm Dịch tiêu đề bằng AI.":"Tên này sẽ dùng cho mục lục EPUB."}));
+}
 function keepRow(){
   const sup=wlSupported();
   return el("div",{},
@@ -954,7 +975,7 @@ function renderEd(){
       el("button",{textContent:open?"Đóng":"Xem",on:{click:()=>{open?edOpen.delete(r.id):edOpen.add(r.id);renderEd()}}}),
       el("button",{textContent:"Làm lại",disabled:dis,on:{click:()=>redoRow(r)}})));
     if(open){
-      const d=el("div",{style:"margin:4px 0 12px"});
+      const d=el("div",{style:"margin:4px 0 12px"});d.append(titleRow(r,dis));
       if(r.out){
         d.append(el("label",{cls:"chk"},el("input",{type:"checkbox",checked:r.accept,on:{change:async e=>{r.accept=e.target.checked;await put("edch",r)}}})," Dùng bản đã sửa khi xuất file"));
         if(r.warns&&r.warns.length)d.append(el("pre",{cls:"nt",textContent:"⚠ "+r.warns.join("\n⚠ ")}));if(r.rep)d.append(el("pre",{cls:"nt",textContent:"Độ bao phủ "+(r.rep.cov==null?"n/a":r.rep.cov+"%")+"\n"+(repLines(r.rep).join("\n")||"Không có ý thiếu, thừa hoặc sai.")}));if(r.notes)d.append(el("pre",{cls:"nt",textContent:r.notes}));
