@@ -66,6 +66,7 @@ body.bi .sr{display:block}
 <details><summary>Thêm truyện mới</summary>
 <label for="nTitle">Tên truyện</label><input id="nTitle">
 <div class="row"><div><label for="nSl">Ngôn ngữ gốc</label><input id="nSl" value="Tự nhận diện"></div><div><label for="nTl">Dịch sang</label><input id="nTl" value="Tiếng Việt"></div></div>
+<label for="nRe">Mẫu tiêu đề chương tự đặt (regex, tùy chọn)</label><input id="nRe" placeholder="Để trống = tự nhận diện. Ví dụ: ^\d+\.\s+">
 <label for="nText">Văn bản (dán vào hoặc mở file .txt)</label><textarea id="nText" placeholder="Cần có dòng tiêu đề chương như 'Chapter 1', 'Chương 1', '第1章'. Phần trước Chương 1 (giới thiệu, mục lục...) sẽ tự bỏ qua."></textarea>
 <div class="row" style="margin-top:8px"><button id="nOpen">Mở file .txt</button><button id="nGo" class="p">Tạo truyện</button></div>
 <input id="nFile" type="file" accept=".txt,text/plain" hidden>
@@ -158,26 +159,83 @@ function splitText(text,max){
   for(const p of pieces){if(b&&(b+"\n"+p).length>max){out.push(b);b=""}b+=(b?"\n":"")+p}
   if(b)out.push(b);return out;
 }
-function buildChunks(bid,text,max){
+const FALSE_HEAD=/^\s*第\s*[\d零一二三四五六七八九十百千两]+\s*(?:回合|节课|節課)/;
+const END_P=/[。，；,;]\s*$/;
+let verifyMsg=null;
+/* Tách chương theo tiêu đề. re: mẫu tiêu đề tự đặt (nếu có) */
+function parseChapters(text,re){
   const lines=text.replace(/\r/g,"").split("\n").filter(l=>!NOISE.test(l));
+  const isHead=l=>{const t=l.trim();if(!t||t.length>=120)return false;return re?re.test(t):(CH.test(t)&&!FALSE_HEAD.test(t)&&!END_P.test(t))};
   const chs=[];let cur={t:"Mở đầu",b:[]};
-  for(const l of lines){
-    if(l.trim().length<120&&CH.test(l)){chs.push(cur);cur={t:l.trim(),b:[]}}else cur.b.push(l);
-  }
+  for(const l of lines){if(isHead(l)){chs.push(cur);cur={t:l.trim(),b:[]}}else cur.b.push(l)}
   chs.push(cur);
   const len=c=>c.b.join("").trim().length,named=chs.filter(c=>c.t!=="Mở đầu");
   let use,drop=0;
   if(!named.length)use=chs.filter(c=>len(c)>0);
   else{
-    let st=named.findIndex(c=>C1.test(c.t)&&len(c)>=60);
-    if(st<0)st=named.findIndex(c=>len(c)>=60);
+    let st=named.findIndex(c=>C1.test(c.t)&&len(c)>=10);
+    if(st<0)st=named.findIndex(c=>len(c)>=10);
     if(st<0)st=0;
     use=named.slice(st);
     drop=chs.filter(c=>!use.includes(c)).reduce((n,c)=>n+len(c)+c.t.length,0);
   }
-  const out=[];let idx=0;
-  use.forEach((c,ci)=>splitText(c.b.join("\n"),max).forEach(s=>out.push({id:bid+":"+String(idx).padStart(6,"0"),bookId:bid,idx:idx++,ch:ci,title:c.t,src:s,tr:""})));
-  return{out,drop};
+  return{use,drop,heads:named.length};
+}
+function seqIssues(titles){
+  const nums=titles.map(chNum),iss=[];let prev=null;
+  nums.forEach((n,i)=>{
+    if(n==null)return;
+    if(prev!=null){
+      if(n===prev)iss.push(`trùng số ${n} (${titles[i].slice(0,30)})`);
+      else if(n<prev)iss.push(`số chương lùi ${prev}→${n}`);
+      else if(n>prev+1)iss.push(`thiếu chương ${prev+1}${n>prev+2?"–"+(n-1):""}`);
+    }
+    prev=n;
+  });
+  return iss.slice(0,12);
+}
+function buildChunks(bid,text,max,re){
+  const P=parseChapters(text,re),out=[],errors=[],nz=s=>s.replace(/\s+/g,"");let idx=0;
+  P.use.forEach((c,ci)=>{
+    const body=c.b.join("\n"),pieces=splitText(body,max);
+    pieces.forEach(s=>out.push({id:bid+":"+String(idx).padStart(6,"0"),bookId:bid,idx:idx++,ch:ci,title:c.t,src:s,tr:""}));
+    if(nz(pieces.join(""))!==nz(body))errors.push(c.t);
+  });
+  const has=new Set(out.map(c=>c.ch));
+  const titles=P.use.filter((c,ci)=>has.has(ci)).map(c=>c.t);
+  return{out,drop:P.drop,info:{heads:P.heads,used:P.use.length,kept:has.size,empty:P.use.length-has.size,errors,seq:seqIssues(titles)}};
+}
+/* Đối chiếu cấu trúc chương trong ứng dụng với chính file gốc: số chương, tiêu đề và nội dung từng chương */
+function compareWithFile(text){
+  let re=null;const rs=(book.re||"").trim();
+  if(rs){try{re=new RegExp(rs,"i")}catch(e){return["Mẫu tiêu đề đã lưu không hợp lệ."]}}
+  const P=parseChapters(text,re),gold=P.use.filter(c=>c.b.join("").trim().length>0);
+  const all=chapters(),mine=all.filter(x=>!(x.cs[0].title==="Mở đầu"&&all.length>1));
+  const nz=s=>s.replace(/\s+/g,""),out=[];
+  if(gold.length!==mine.length)out.push(`Số chương khác nhau: file gốc ${gold.length}, trong ứng dụng ${mine.length}.`);
+  let bad=0;
+  for(let i=0;i<Math.min(gold.length,mine.length);i++){
+    const g=gold[i],m=mine[i],mt=m.cs[0].title;
+    const sameT=g.t.trim()===mt.trim(),sameB=nz(g.b.join(""))===nz(m.cs.map(x=>x.src).join(""));
+    if(!sameT||!sameB){bad++;if(out.length<10)out.push(`Chương ${i+1}: ${!sameT?`khác tiêu đề (${g.t.trim().slice(0,30)} ≠ ${mt.trim().slice(0,30)})`:"nội dung khác file gốc"}.`)}
+  }
+  if(!out.length)return[`✔ Khớp hoàn toàn: ${gold.length} chương, tiêu đề và nội dung từng chương đúng như file gốc.`];
+  if(bad)out.push(`Tổng cộng ${bad} chương không khớp.`);
+  return out;
+}
+function checkSection(){
+  const c=book.check,L=[];
+  if(c){
+    L.push(`Khi tạo: tìm thấy ${c.heads} tiêu đề, giữ ${c.kept} chương${c.empty?`, bỏ ${c.empty} tiêu đề không có nội dung`:""}. ${c.errors&&c.errors.length?"⚠ "+c.errors.length+" chương tách chưa khớp nguyên văn.":"Tách đoạn khớp nguyên văn, không mất và không trùng chữ."}`);
+    if(c.seq&&c.seq.length)L.push("Lưu ý số chương: "+c.seq.join("; "));
+  }
+  const chs=chapters(),dn=chs.filter(x=>x.cs.every(y=>y.tr)).length;
+  L.push(`Hiện có ${chs.length} chương, ${dn} chương đã dịch xong. Mỗi đoạn dịch gắn cố định với chương gốc của nó nên số chương và chỗ ngắt chương không đổi sau khi dịch.`);
+  const fi=el("input",{type:"file",accept:".txt,text/plain",hidden:true,on:{change:async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;verifyMsg=compareWithFile(await readTxt(f));renderWs()}}});
+  const sec=el("section",{},el("h2",{textContent:"Kiểm tra cấu trúc chương"}),el("pre",{cls:"nt",textContent:L.join("\n")}));
+  if(book.srcType!=="scrape")sec.append(el("button",{textContent:"Đối chiếu với file gốc",title:"Chọn lại file .txt gốc để kiểm tra số chương, tiêu đề và nội dung từng chương",on:{click:()=>fi.click()}}),fi);
+  if(verifyMsg)sec.append(el("pre",{cls:"nt",textContent:verifyMsg.join("\n")}));
+  return sec;
 }
 const parseGl=t=>t.split("\n").map(l=>l.split("=")).filter(a=>a.length>=2&&a[0].trim()).map(a=>[a[0].trim(),a.slice(1).join("=").trim()]);
 /* ---------- AI ---------- */
@@ -233,12 +291,12 @@ async function translateChunk(c,srcOv,depth){
   const sys=["You are a professional literary translator working on fiction.",
     `Translate from ${book.sl&&book.sl!=="Tự nhận diện"?book.sl:"the source language (detect it automatically)"} into ${book.tl}.`,
     "Style guide from the reader:\n"+(st?st.prompt:""),...charBlock(low),
-    "Rules: keep paragraph structure and line breaks; keep dialogue as dialogue; never summarize, omit or add content; use glossary terms exactly; keep names consistent; follow the character table (if given) for names, gender, pronouns, forms of address and relationships.",
+    "Rules: keep paragraph structure and line breaks; keep dialogue as dialogue; never summarize, omit or add content; use glossary terms exactly; keep names consistent; follow the character table (if given) for names, gender, pronouns, forms of address and relationships. Never output chapter titles or chapter numbers inside the translation (the chapter title is handled separately) and never repeat the context passage.",
     cfg.extract?"Output format: first the translation only, with no notes. Then on a new line exactly ===TERMS=== followed by a JSON array of NEW proper nouns (character names, places, organizations, techniques, items, titles) found in this passage and missing from the glossary, as [{\"s\":\"source\",\"t\":\"your translation\"}]. Use [] if none.":"Output ONLY the translation, with no notes or commentary."].join("\n");
   let user="";
   if(g.length)user+="Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n";
   const pv=chunks[c.idx-1];
-  if(pv&&pv.tr)user+="Context only, do not translate again. End of previous passage:\n"+pv.src.slice(-300)+"\n=> "+pv.tr.slice(-300)+"\n\n";
+  if(pv&&pv.tr&&pv.ch===c.ch)user+="<context>\nContext only: never translate it and never repeat it in your answer. End of the previous passage:\n"+pv.src.slice(-300)+"\n=> "+pv.tr.slice(-300)+"\n</context>\n\n";
   if((!pv||pv.ch!==c.ch)&&c.title!=="Mở đầu")user+=`This passage starts a new chapter titled "${c.title}". Begin your output with one line "===TITLE=== " followed by that chapter title translated into ${book.tl}, then the translation on the following lines.\n\n`;
   user+="Translate this text:\n<text>\n"+src+"\n</text>";
   const raw=await ask(sys,user);
@@ -247,7 +305,7 @@ async function translateChunk(c,srcOv,depth){
     if(parts.length>1){
       const rs=[];for(const p of parts)rs.push(await translateChunk(c,p,depth+1));
       let jt=rs.map(x=>x.tr).join("\n");
-      if(depth===0){const pv3=chunks[c.idx-1];if(pv3&&pv3.tr)jt=trimOverlap(pv3.tr,jt)}
+      if(depth===0){const pv3=chunks[c.idx-1];if(pv3&&pv3.tr&&pv3.ch===c.ch)jt=trimOverlap(pv3.tr,jt)}
       return{tr:jt,terms:rs.flatMap(x=>x.terms),ttl:rs[0].ttl};
     }
   }
@@ -256,7 +314,8 @@ async function translateChunk(c,srcOv,depth){
   if(i>=0){tr=raw.slice(0,i);const m=raw.slice(i).match(/\[[\s\S]*\]/);if(m)try{terms=JSON.parse(m[0])}catch(e){}}
   tr=fixNl(tr).trim();let ttl="";const tm=tr.match(/^===TITLE===[ \t]*(.*)\n?/);
   if(tm){ttl=tm[1].trim();tr=tr.slice(tm[0].length).trim()}
-  if(depth===0){const pv2=chunks[c.idx-1];if(pv2&&pv2.tr)tr=trimOverlap(pv2.tr,tr)}
+  if(!pv||pv.ch!==c.ch){const L0=tr.split("\n"),fl=(L0[0]||"").trim();if(fl&&fl.length<=80&&CH.test(fl)&&!/[.!?…"”»]$/.test(fl))tr=L0.slice(1).join("\n").trim()}
+  if(depth===0){const pv2=chunks[c.idx-1];if(pv2&&pv2.tr&&pv2.ch===c.ch)tr=trimOverlap(pv2.tr,tr)}
   return{tr,terms,ttl};
 }
 function addTerms(ts){
@@ -354,8 +413,9 @@ async function exportEpub(b=book,cs=chunks){
   say(`Đã xuất EPUB với ${ds.length}/${chapters(cs).length} chương đã dịch xong.`);
 }
 function exportTxt(){
-  const ds=doneChs();if(!ds.length){say("Chưa có chương nào dịch xong để xuất.",1);return}
+  const ds=doneChs(),total=chapters().length;if(!ds.length){say("Chưa có chương nào dịch xong để xuất.",1);return}
   save(new Blob([ds.map(c=>c.title+"\n\n"+c.cs.map(x=>x.tr).join("\n")).join("\n\n\n")],{type:"text/plain;charset=utf-8"}),book.title+".txt");
+  say(`Đã xuất TXT: ${ds.length}/${total} chương${ds.length<total?" (các chương chưa dịch xong bị bỏ qua)":""}.`);
 }
 /* ---------- UI ---------- */
 const isDone=b=>b.total>0&&b.done>=b.total;
@@ -444,7 +504,7 @@ function renderWs(){
       el("div",{},el("label",{textContent:"Ngôn ngữ gốc"}),el("input",{value:book.sl,on:{change:async e=>{book.sl=e.target.value;await put("books",book)}}})),
       el("div",{},el("label",{textContent:"Dịch sang"}),el("input",{value:book.tl,on:{change:async e=>{book.tl=e.target.value;await put("books",book)}}}))),
     el("div",{id:"status",role:"status"}));
-  ws.append(head);
+  ws.append(head);ws.append(checkSection());
   if(book.pending.length){
     const p=el("section",{},el("h2",{textContent:`Thuật ngữ đề xuất (${book.pending.length})`}));
     const approve=async t=>{book.gl+=(book.gl&&!book.gl.endsWith("\n")?"\n":"")+t.s+" = "+t.t;book.pending=book.pending.filter(x=>x!==t);await put("books",book)};
@@ -468,7 +528,7 @@ function renderWs(){
 }
 async function openBook(id){
   if(running){say("Hãy dừng lượt dịch hiện tại trước khi chuyển truyện.",1);return}
-  book=books.find(b=>b.id===id);book.pending=book.pending||[];book.chars=book.chars||"";
+  verifyMsg=null;book=books.find(b=>b.id===id);book.pending=book.pending||[];book.chars=book.chars||"";
   chunks=(await tx("chunks","readonly",s=>s.index("book").getAll(id))).sort((a,b)=>a.idx-b.idx);
   curCh=0;const first=chunks.find(c=>!c.tr);if(first)curCh=first.ch;
   const bad=chunks.filter(c=>/\\n/.test(c.src)||/\\n/.test(c.tr||""));
@@ -498,11 +558,18 @@ $("nOpen").onclick=()=>$("nFile").click();
 $("nFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;$("nText").value=await f.text();if(!$("nTitle").value)$("nTitle").value=f.name.replace(/\.txt$/i,"");e.target.value=""};
 $("nGo").onclick=async()=>{
   const text=$("nText").value;if(!text.trim()||!$("nTitle").value.trim()){alert("Hãy nhập tên truyện và văn bản.");return}
-  const id="b"+Date.now(),bc=buildChunks(id,text,cfg.max||3000),cs=bc.out;
-  const b={id,title:$("nTitle").value.trim(),sl:$("nSl").value,tl:$("nTl").value,styleId:styles[0].id,gl:"",chars:"",pending:[],updated:Date.now(),done:0,total:cs.length};
+  const rs=$("nRe").value.trim();let re=null;
+  if(rs){try{re=new RegExp(rs,"i")}catch(e){alert("Mẫu tiêu đề chương không hợp lệ: "+e.message);return}}
+  const id="b"+Date.now(),bc=buildChunks(id,text,cfg.max||3000,re),cs=bc.out,inf=bc.info;
+  if(!cs.length){alert("Không tìm thấy nội dung nào để dịch. Hãy kiểm tra lại văn bản hoặc mẫu tiêu đề chương.");return}
+  const b={id,title:$("nTitle").value.trim(),sl:$("nSl").value,tl:$("nTl").value,styleId:styles[0].id,gl:"",chars:"",pending:[],updated:Date.now(),done:0,total:cs.length,srcType:"txt",re:rs,check:inf};
   await put("books",b);await tx("chunks","readwrite",s=>cs.forEach(v=>s.put(v)));
   books.push(b);$("nText").value="";$("nTitle").value="";await openBook(id);
-  say(`Đã tạo truyện: ${new Set(cs.map(c=>c.ch)).size} chương, ${cs.length} đoạn.`+(bc.drop?` Đã bỏ qua ${bc.drop} ký tự trước Chương 1 (giới thiệu, mục lục...).`:""));
+  const w=[];
+  if(inf.errors.length)w.push(`⚠ ${inf.errors.length} chương tách chưa khớp nguyên văn`);
+  if(inf.empty)w.push(`${inf.empty} tiêu đề không có nội dung nên bị bỏ qua`);
+  if(inf.seq.length)w.push("số chương: "+inf.seq.slice(0,4).join("; "));
+  say(`Đã tạo truyện: ${inf.kept} chương, ${cs.length} đoạn (tìm thấy ${inf.heads} tiêu đề).`+(bc.drop?` Đã bỏ qua ${bc.drop} ký tự trước Chương 1.`:"")+(w.length?" Lưu ý: "+w.join("; ")+".":" Tách đoạn khớp nguyên văn."));
 };
 /* ---------- Keys ---------- */
 const setKeys=a=>{cfg.key=[...new Set(a)].join(";");saveCfg();renderKeys()};
@@ -1162,11 +1229,14 @@ function dedupBlocks(text,th){
 /* Dịch tab: bỏ các đoạn đầu của khúc mới nếu AI lỡ dịch lại phần ngữ cảnh của khúc trước */
 function trimOverlap(prevTr,newTr){
   const prev=String(prevTr||"").split("\n").filter(x=>x.trim()).slice(-6).map(mkUnit),L=String(newTr||"").split("\n");
+  const tail=mkUnit(String(prevTr||"").slice(-700));
+  /* một đoạn mở đầu nằm gọn trong phần cuối của khúc trước (kể cả chỉ là một mẩu câu) cũng là phần ngữ cảnh bị dịch lại */
+  const inTail=u=>{if(u.k.length<25)return false;let n=0;for(const g of u.g)if(tail.g.has(g))n++;return n/Math.max(1,u.g.size)>=0.85};
   let i=0,cut=0;
   while(i<L.length){
     if(!L[i].trim()){i++;continue}
     const u=mkUnit(L[i]);
-    if(u.k.length>=25&&prev.some(p=>dupScore(u,p,0.75))){cut++;i++}else break;
+    if(u.k.length>=25&&(prev.some(p=>dupScore(u,p,0.75))||inTail(u))){cut++;i++}else break;
   }
   const rest=L.slice(i).join("\n").trim();
   return(cut&&rest)?rest:newTr;
@@ -1567,6 +1637,7 @@ window.importChapters=async o=>{
   if(!cs.length)throw new Error("Không có nội dung để đưa vào.");
   const b={id,title:o.title||"Truyện mới",sl:o.sl||"Tự nhận diện",tl:o.tl||"Tiếng Việt",styleId:styles[0].id,gl:"",chars:"",pending:[],updated:Date.now(),done:0,total:cs.length};
   await put("books",b);await tx("chunks","readwrite",s=>cs.forEach(v=>s.put(v)));
+  b.srcType="scrape";const kc=[...new Set(cs.map(c=>c.ch))];b.check={heads:(o.chapters||[]).length,used:(o.chapters||[]).length,kept:kc.length,empty:(o.chapters||[]).length-kc.length,errors:[],seq:seqIssues(kc.map(k=>cs.find(c=>c.ch===k).title))};await put("books",b);
   books.push(b);showTab("tr");
   if(running)renderAll();else await openBook(id);
   say(`Đã đưa vào từ tab Cào truyện: ${new Set(cs.map(c=>c.ch)).size} chương, ${cs.length} đoạn.`);
