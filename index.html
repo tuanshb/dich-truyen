@@ -680,26 +680,62 @@ function copyBtn(getText){
     }
   }}});
 }
-/* Soát lặp toàn bộ truyện (chỉ khi người dùng bấm). Phạm vi xử lý là cả truyện, nhưng việc so sánh câu lặp chỉ thực hiện trong từng chương */
+/* Soát lặp toàn bộ: có tiến trình, tạm dừng, soát tiếp, dừng. Phạm vi xử lý là cả truyện, nhưng chỉ so câu lặp trong từng chương */
+let dedupCtl=null;
+async function dedupGate(){
+  if(dedupCtl.stop)throw{stopped:true};
+  while(dedupCtl.paused){await new Promise(res=>{dedupCtl.waiter=res});if(dedupCtl.stop)throw{stopped:true}}
+}
+function dedupPause(){if(dedupCtl&&!dedupCtl.done){dedupCtl.paused=true;renderEd()}}
+function dedupResume(){if(dedupCtl&&!dedupCtl.done){dedupCtl.paused=false;const w=dedupCtl.waiter;dedupCtl.waiter=null;if(w)w();renderEd()}}
+function dedupStop(){if(dedupCtl&&!dedupCtl.done){dedupCtl.stop=true;dedupCtl.paused=false;const w=dedupCtl.waiter;dedupCtl.waiter=null;if(w)w();renderEd()}}
+function dedupBox(){
+  if(!dedupCtl)return el("span",{});
+  const c=dedupCtl,pct=c.n?Math.round(c.i/c.n*100):0;
+  const state=c.done?(c.stopped?"Đã dừng":"Hoàn tất"):c.paused?"Đã tạm dừng":"Đang soát";
+  return el("div",{cls:"dd"},
+    el("div",{cls:"bar"},el("i",{style:"width:"+pct+"%"})),
+    el("p",{cls:"hint",textContent:`${state} · chương ${Math.min(c.i,c.n)}/${c.n}${c.title&&!c.done?": "+c.title:""} · đã xoá ${c.total} câu lặp trong ${c.chapters} chương`}));
+}
+function dedupBtns(){
+  if(!dedupCtl||dedupCtl.done)return[el("button",{disabled:edRunning,textContent:"Soát lặp toàn bộ",title:"Chỉ chạy khi bấm. Phạm vi xử lý là cả truyện, nhưng chỉ so câu lặp trong từng chương (từ 40 ký tự).",on:{click:dedupAll}})];
+  return[
+    el("button",{cls:"p",textContent:dedupCtl.paused?"Soát tiếp":"Tạm dừng soát",on:{click:()=>dedupCtl.paused?dedupResume():dedupPause()}}),
+    el("button",{textContent:"Dừng soát",on:{click:dedupStop}})];
+}
 async function dedupAll(){
   if(edRunning||!ed||!edRows.length)return;
   if(!confirm("Soát lặp toàn bộ truyện? Mỗi chương được soát riêng: câu từ 40 ký tự trở lên lặp lại trong cùng chương sẽ bị xoá, giữ lại lần đầu. Không so sánh với chương khác. Không hoàn tác được, nên xuất EPUB hoặc sao lưu trước."))return;
-  edRunning=true;renderEd();
-  let total=0,chapters=0;
+  edRunning=true;
+  dedupCtl={i:0,n:edRows.length,title:"",total:0,chapters:0,paused:false,stop:false,waiter:null,done:false,stopped:false};
+  renderEd();
   try{
     for(const r of edRows){
-      if(r.accept===false)continue;
-      const cur=bestTxt(r);if(!cur)continue;
-      const res=dedupLocal(cur,40,new Set());
-      if(res.removed>0){
-        r.out=res.text;r.edited=true;r.dupAll=(r.dupAll||0)+res.removed;
-        total+=res.removed;chapters++;
-        await put("edch",r);
+      await dedupGate();
+      dedupCtl.i++;dedupCtl.title=r.trTitle||"";
+      if(r.accept!==false){
+        const cur=bestTxt(r);
+        if(cur){
+          const res=dedupLocal(cur,40,new Set());
+          if(res.removed>0){
+            r.out=res.text;r.edited=true;r.dupAll=(r.dupAll||0)+res.removed;
+            dedupCtl.total+=res.removed;dedupCtl.chapters++;
+            await put("edch",r);
+          }
+        }
       }
+      edSay(`Soát lặp: chương ${dedupCtl.i}/${dedupCtl.n}`);
+      renderEd();
+      await new Promise(res=>setTimeout(res,0));
     }
     await edSave();
-    edSay(total?`Soát lặp xong: đã xoá ${total} câu lặp trong ${chapters} chương.`:"Soát lặp xong: không có câu lặp từ 40 ký tự trở lên trong cùng chương.");
-  }catch(e){edSay("Lỗi khi soát lặp: "+e.message,1)}
+    dedupCtl.done=true;
+    edSay(dedupCtl.total?`Soát lặp xong: đã xoá ${dedupCtl.total} câu lặp trong ${dedupCtl.chapters} chương.`:"Soát lặp xong: không có câu lặp từ 40 ký tự trở lên trong cùng chương.");
+  }catch(e){
+    dedupCtl.done=true;
+    if(e.stopped){dedupCtl.stopped=true;edSay(`Đã dừng soát lặp ở chương ${dedupCtl.i}/${dedupCtl.n}. Các chương đã soát được lưu.`)}
+    else edSay("Lỗi khi soát lặp: "+e.message,1);
+  }
   edRunning=false;renderEd();renderEdLib();
 }
 function keepRow(){
@@ -1011,7 +1047,7 @@ function renderEd(){
     el("div",{cls:"bar"},el("i",{style:"width:"+pct+"%"})),
     el("pre",{cls:"nt",textContent:stepLine(1)+"\n"+stepLine(2)}),
     el("div",{cls:"row",style:"margin:10px 0"},
-      ...stepBtns(1),...stepBtns(2),el("button",{disabled:edRunning,textContent:"Chạy tự động cả hai bước",on:{click:()=>runEd(0)}}),el("button",{disabled:edRunning,textContent:"Soát lặp toàn bộ",title:"Chỉ chạy khi bấm. Phạm vi xử lý là cả truyện, nhưng chỉ so câu lặp trong từng chương (từ 40 ký tự).",on:{click:dedupAll}}),
+      ...stepBtns(1),...stepBtns(2),el("button",{disabled:edRunning,textContent:"Chạy tự động cả hai bước",on:{click:()=>runEd(0)}}),...dedupBtns(),
       el("button",{textContent:"Xuất EPUB",on:{click:edEpub}}),el("button",{textContent:"Xuất .txt",on:{click:edTxt}})),
     el("div",{id:"edStatus",role:"status"}),keepRow(),authorRow());
   const ck=(k,l)=>el("label",{cls:"chk"},el("input",{type:"checkbox",checked:o[k],disabled:dis,on:{change:async e=>{o[k]=e.target.checked;await edSave()}}})," "+l);
@@ -1046,7 +1082,7 @@ function renderEd(){
     }
   });
   if(edRows.length>edShow)list.append(el("button",{textContent:`Hiện thêm (còn ${edRows.length-edShow} chương)`,on:{click:()=>{edShow+=50;renderEd()}}}));
-  W.append(head,renderReport(),opt,list);
+  W.append(head,dedupBox(),renderReport(),opt,list);
 }
 $("edGlFile").onclick=()=>$("edGlIn").click();
 $("edGlIn").onchange=async e=>{const f=e.target.files[0];if(f)$("edGl").value=await readTxt(f);e.target.value=""};
