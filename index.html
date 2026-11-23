@@ -648,6 +648,38 @@ function titleRow(r,dis){
       el("button",{textContent:"Dịch tiêu đề bằng AI",disabled:dis||!hasCjk,on:{click:()=>fixTitle(r)}})),
     el("p",{cls:"hint",textContent:hasCjk?"⚠ Tên chương còn chữ Trung. Sửa tay hoặc bấm Dịch tiêu đề bằng AI.":"Tên này sẽ dùng cho mục lục EPUB."}));
 }
+/* Loại bỏ câu/đoạn lặp sau bước 2 */
+const dedupKey=s=>s.toLowerCase().replace(/[\s\p{P}]+/gu,"");
+function dedupLocal(text){
+  const seen=new Set();let removed=0;
+  const out=text.split("\n").map(p=>{
+    const sents=p.split(/(?<=[.!?…"”])\s+/);
+    const kept=sents.filter(x=>{const k=dedupKey(x);if(k.length<30)return true;if(seen.has(k)){removed++;return false}seen.add(k);return true});
+    return kept.length===sents.length?p:kept.join(" ").trim();
+  }).filter(p=>p.trim().length>0);
+  return{text:out.join("\n"),removed};
+}
+async function dedupAI(text,mdl){
+  const pcs=text.length<=4500?[text]:splitText(text,4500),outs=[];
+  const sys="You are an editor of a Vietnamese translation of fiction. The text contains repeated sentences or paragraphs: the same content appears more than once. Remove every repeated copy and keep only the first occurrence, in its original position. Change nothing else. Output the COMPLETE passage, one paragraph per line, with no commentary.";
+  for(const pc of pcs){
+    const raw=await ask(sys,"<translation>\n"+pc+"\n</translation>",edAbort.signal,mdl);
+    outs.push(raw.replace(/^\s*<translation>\s*/i,"").replace(/\s*<\/translation>\s*$/i,"").trim());
+  }
+  return outs.join("\n").trim();
+}
+/* Nút Copy: sao chép toàn bộ nội dung của một ô */
+function copyBtn(getText){
+  return el("button",{textContent:"📋 Copy",title:"Sao chép toàn bộ nội dung ô này",on:{click:async()=>{
+    const v=getText()||"";
+    try{await navigator.clipboard.writeText(v);edSay("Đã sao chép nội dung.")}
+    catch(e){
+      const t=document.createElement("textarea");t.value=v;t.style.position="fixed";t.style.opacity="0";document.body.append(t);t.select();
+      let ok=false;try{ok=document.execCommand("copy")}catch(x){}
+      t.remove();edSay(ok?"Đã sao chép nội dung.":"Không sao chép được, hãy chọn và sao chép bằng tay.",!ok);
+    }
+  }}});
+}
 function keepRow(){
   const sup=wlSupported();
   return el("div",{},
@@ -705,6 +737,7 @@ const fixPunct=t=>PMAP.reduce((s,p)=>s.replace(p[0],p[1]),t);
 const lenPct=(T,out)=>{const k=out.length/Math.max(1,T.length);return(k<.7||k>1.6)?Math.round(k*100):null};
 function finalize(r){
   const w=[];
+  if(r.dupWarn)w.push("Bản sau bước 2 vẫn dài "+r.dupPct+"% so với bản trước (quá 110%), có thể còn nội dung lặp.");
   if(r.lenWarn!=null)w.push("Độ dài bản sửa còn "+r.lenWarn+"% so với bản cũ, hãy xem kỹ.");
   if(r.han>0)w.push("Còn "+r.han+" ký tự Trung sau khi xử lý.");
   r.warns=w;r.status=w.length?"warn":"ok";r.accept=true;r.manual=false;r.edited=false;
@@ -803,7 +836,11 @@ async function step2(r,mdl){
     const x=await comparePiece(pc,seg,mdl);
     outs.push(x.text);if(x.cov!=null)covs.push(x.cov);miss.push(...x.miss);wrong.push(...x.wrong);extra.push(...x.extra);
   }
-  const out=await repairHan(fixPunct(outs.join("\n").trim()),mdl);
+  let out=await repairHan(fixPunct(outs.join("\n").trim()),mdl);
+  const base=(r.out1||r.tr).length,lim=base*1.1;
+  const dl=dedupLocal(out);out=dl.text;r.dupRemoved=dl.removed;r.dupAI=false;
+  if(out.length>lim){out=await dedupAI(out,mdl);r.dupAI=true;}
+  r.dupWarn=out.length>lim;r.dupPct=Math.round(out.length/Math.max(1,base)*100);
   const cov=covs.length?Math.round(covs.reduce((a,b)=>a+b,0)/covs.length):null;
   r.out=out;r.out2=out;r.rep={cov,miss,wrong,extra,rawLen:rl};r.han=hanCount(out);r.lenWarn=lenPct(r.tr,out);
   finalize(r);
@@ -881,7 +918,7 @@ async function runEd(mode,only){
 }
 async function redoRow(r){
   if(edRunning)return;
-  Object.assign(r,{s1:false,s2:false,out:"",out1:"",out2:"",edited:false,manual:false,rep:null,han:0,han1:0,notes:"",warns:[],status:"",lenWarn:null});
+  Object.assign(r,{s1:false,s2:false,out:"",out1:"",out2:"",dupRemoved:0,dupWarn:false,dupAI:false,edited:false,manual:false,rep:null,han:0,han1:0,notes:"",warns:[],status:"",lenWarn:null});
   await put("edch",r);await runEd(0,[r]);
 }
 
@@ -978,11 +1015,11 @@ function renderEd(){
       const d=el("div",{style:"margin:4px 0 12px"});d.append(titleRow(r,dis));
       if(r.out){
         d.append(el("label",{cls:"chk"},el("input",{type:"checkbox",checked:r.accept,on:{change:async e=>{r.accept=e.target.checked;await put("edch",r)}}})," Dùng bản đã sửa khi xuất file"));
-        if(r.warns&&r.warns.length)d.append(el("pre",{cls:"nt",textContent:"⚠ "+r.warns.join("\n⚠ ")}));if(r.rep)d.append(el("pre",{cls:"nt",textContent:"Độ bao phủ "+(r.rep.cov==null?"n/a":r.rep.cov+"%")+"\n"+(repLines(r.rep).join("\n")||"Không có ý thiếu, thừa hoặc sai.")}));if(r.notes)d.append(el("pre",{cls:"nt",textContent:r.notes}));
-        d.append(el("div",{cls:"row",style:"align-items:center"},el("label",{textContent:"Bản đã sửa (có thể chỉnh tay)"}),el("button",{textContent:"Mở toàn màn hình",on:{click:()=>openFs(r)}})),hlArea(r.out,{style:"min-height:180px",onChange:async v=>{r.out=v;r.edited=true;await put("edch",r)}}));
+        if(r.dupRemoved)d.append(el("p",{cls:"hint",textContent:"Đã loại bỏ "+r.dupRemoved+" câu/đoạn lặp sau bước 2"+(r.dupAI?" (có soát thêm bằng AI).":".")}));if(r.warns&&r.warns.length)d.append(el("pre",{cls:"nt",textContent:"⚠ "+r.warns.join("\n⚠ ")}));if(r.rep)d.append(el("pre",{cls:"nt",textContent:"Độ bao phủ "+(r.rep.cov==null?"n/a":r.rep.cov+"%")+"\n"+(repLines(r.rep).join("\n")||"Không có ý thiếu, thừa hoặc sai.")}));if(r.notes)d.append(el("pre",{cls:"nt",textContent:r.notes}));
+        d.append(el("div",{cls:"row",style:"align-items:center"},el("label",{textContent:"Bản đã sửa (có thể chỉnh tay)"}),el("button",{textContent:"Mở toàn màn hình",on:{click:()=>openFs(r)}}),copyBtn(()=>r.out)),hlArea(r.out,{style:"min-height:180px",onChange:async v=>{r.out=v;r.edited=true;await put("edch",r)}}));
       }
-      d.append(el("label",{textContent:"Bản dịch hiện có"}),el("textarea",{value:r.tr,readOnly:true,style:"min-height:120px"}));
-      if(r.raw)d.append(el("label",{textContent:"Bản gốc"}),el("textarea",{value:r.raw,readOnly:true,style:"min-height:120px"}));
+      d.append(el("div",{cls:"row",style:"align-items:center"},el("label",{textContent:"Bản dịch hiện có"}),copyBtn(()=>r.tr)),el("textarea",{value:r.tr,readOnly:true,style:"min-height:120px"}));
+      if(r.raw)d.append(el("div",{cls:"row",style:"align-items:center"},el("label",{textContent:"Bản gốc"}),copyBtn(()=>r.raw)),el("textarea",{value:r.raw,readOnly:true,style:"min-height:120px"}));
       list.append(d);
     }
   });
@@ -1026,6 +1063,7 @@ function showTab(n){
 $("mt1").onclick=()=>showTab("tr");$("mt2").onclick=()=>showTab("sc");$("mt3").onclick=()=>showTab("ed");
 try{const t=localStorage.getItem("dichtruyen:tab");if(t==="sc"||t==="ed")showTab(t)}catch(e){}
 /* ---------- Init ---------- */
+$("nText").before(copyBtn(()=>$("nText").value));
 (async()=>{
   db=await openDB();books=await all("books");styles=await all("styles");eds=await all("eds");
   if(!styles.length){for(const [n,p] of SEED){const s={id:"s"+Math.random().toString(36).slice(2,9),name:n,prompt:p};await put("styles",s);styles.push(s)}}
