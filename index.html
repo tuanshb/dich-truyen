@@ -105,8 +105,11 @@ body.bi .sr{display:block}
 <label for="edTitle">Tên dự án</label><input id="edTitle">
 <label for="edTr">Bản dịch (.txt)</label><input id="edTr" type="file" accept=".txt,text/plain">
 <label for="edRaw">Bản gốc (.txt, nên có để so sánh)</label><input id="edRaw" type="file" accept=".txt,text/plain">
+<label class="chk"><input type="checkbox" id="edRebuild" checked> Ghép lại theo cấu trúc chương của bản gốc</label>
+<p class="hint">Dùng khi bản dịch bị chia nhỏ hoặc sai số chương. Số chương và tên chương lấy theo bản gốc, đoạn dịch được ghép về đúng chương. Cần có file bản gốc.</p>
 <div class="row"><div><label for="edSl">Ngôn ngữ gốc</label><input id="edSl" value="Tiếng Trung"></div><div><label for="edTl">Ngôn ngữ bản dịch</label><input id="edTl" value="Tiếng Việt"></div></div>
 <label for="edGl">Bảng thuật ngữ và tên riêng (Gốc = Dịch, mỗi dòng một mục)</label><textarea id="edGl"></textarea>
+<label for="edJunk">Từ hoặc cụm từ rác cần xoá (tùy chọn, mỗi dòng một mục)</label><textarea id="edJunk" style="min-height:60px" placeholder="Ví dụ: tên trang web, câu quảng cáo…"></textarea>
 <div class="row" style="margin-top:8px"><button id="edGlFile">Mở file bảng thuật ngữ</button><button id="edGo" class="p">Tạo dự án</button></div>
 <input id="edGlIn" type="file" accept=".txt,text/plain" hidden>
 <p class="hint">Chương của hai file được ghép theo số chương trong tiêu đề (hỗ trợ 第N章, Chapter N, Chương N). Nếu không ghép được thì ghép theo thứ tự.</p>
@@ -316,7 +319,7 @@ function epubFrom(title,tl,chs,cover){
   const lang=/việt/i.test(tl)?"vi":"en",uid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now());
   const iso=new Date().toISOString().slice(0,19)+"Z",n=chs.length;
   const X=(body,ttl,extraHead="")=>`<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="${lang}" lang="${lang}">\n<head><meta charset="utf-8"/><title>${esc(ttl)}</title><link rel="stylesheet" type="text/css" href="style.css"/>${extraHead}</head>\n<body>${body}</body>\n</html>`;
-  const paras=t=>t.split(/\n+/).map(s=>s.trim()).filter(Boolean).map(p=>`<p>${esc(p)}</p>`).join("");
+  const paras=t=>cleanText(t).split("\n").filter(Boolean).map(p=>`<p>${esc(p)}</p>`).join("");
   const files=[{n:"mimetype",d:"application/epub+zip"},
     {n:"META-INF/container.xml",d:`<?xml version="1.0" encoding="utf-8"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`},
     {n:"OEBPS/style.css",d:EPUB_CSS}];
@@ -552,10 +555,169 @@ function align(R,T){
   }
   return T.map((t,i)=>({t,r:R[i]||null}));
 }
+const cleanText=t=>String(t||"").replace(/[\u200b-\u200d\u2060\ufeff]/g,"").split(/\r?\n/).map(s=>s.replace(/[\u00a0\u3000]/g," ").trim()).filter(Boolean).join("\n");
+/* Ghép lại bản dịch theo cấu trúc chương của bản gốc. R: các chương gốc [{title,text}], text: toàn bộ file bản dịch */
+function splitRange(lines,a,b,weights){
+  const k=weights.length,res=[a];
+  if(k===1){res.push(b);return res}
+  const len=[];for(let i=a;i<b;i++)len.push(lines[i].length+1);
+  const tot=len.reduce((x,y)=>x+y,0)||1,W=weights.reduce((x,y)=>x+y,0)||1,room=(b-a)>=k?1:0;
+  let cum=0,idx=0,ws=0;
+  for(let c=0;c<k-1;c++){
+    ws+=weights[c];const target=ws/W*tot;
+    while(idx<len.length&&cum+len[idx]/2<target){cum+=len[idx];idx++}
+    let pos=a+idx;
+    pos=Math.max(pos,res[res.length-1]+room);
+    pos=Math.min(pos,b-(k-1-c)*room);
+    res.push(pos);
+  }
+  res.push(b);return res;
+}
+function rebuildByRaw(R,text){
+  const all=text.replace(/\r/g,"").replace(/[\u00a0\u3000\u200b-\u200d\ufeff]/g," ").split("\n").map(x=>x.trim()).filter(Boolean);
+  const lines=[],heads=[];
+  for(const l of all){if(l.length<=120&&CH.test(l))heads.push({pos:lines.length,title:l,num:chNum(l)});else lines.push(l)}
+  const n=R.length,rl=R.map(c=>c.text.length),rn=R.map(c=>chNum(c.title));
+  const totR=rl.reduce((a,b)=>a+b,0)||1,cumR=[0];rl.forEach((v,i)=>cumR.push(cumR[i]+v));
+  const cumL=[0];lines.forEach(l=>cumL.push(cumL[cumL.length-1]+l.length+1));
+  const L=cumL[cumL.length-1]||1;
+  const cnt=new Map();rn.forEach(x=>{if(x!=null)cnt.set(x,(cnt.get(x)||0)+1)});
+  const idxOf=new Map();rn.forEach((x,i)=>{if(x!=null&&cnt.get(x)===1)idxOf.set(x,i)});
+  /* mốc: tiêu đề chương có sẵn trong bản dịch khớp số chương với bản gốc, đúng thứ tự và không lệch quá xa */
+  const anchors=[];let lastRi=-1,lastPos=-1;
+  for(const h of heads){
+    if(h.num==null||!idxOf.has(h.num))continue;
+    const ri=idxOf.get(h.num);
+    if(ri<=lastRi||h.pos<lastPos)continue;
+    if(Math.abs(cumL[h.pos]/L-cumR[ri]/totR)>0.25)continue;
+    anchors.push({ri,pos:h.pos,title:h.title});lastRi=ri;lastPos=h.pos;
+  }
+  const b=new Array(n+1).fill(0),title=new Array(n).fill(null);b[n]=lines.length;
+  anchors.forEach(a=>{b[a.ri]=a.pos;title[a.ri]=a.title});
+  const fixed=[...new Set([0,...anchors.map(a=>a.ri),n])].sort((x,y)=>x-y);
+  for(let j=0;j<fixed.length-1;j++){
+    const f=fixed[j],g=fixed[j+1],a0=(f===0&&!anchors.some(a=>a.ri===0))?0:b[f],b0=g===n?lines.length:b[g];
+    if(g-f<=1){continue}
+    const rs=splitRange(lines,a0,b0,rl.slice(f,g));
+    for(let t=1;t<g-f;t++)b[f+t]=rs[t];
+  }
+  const rho=L/totR,rows=[];let off=0,noTr=0;
+  for(let i=0;i<n;i++){
+    const s=b[i],e=b[i+1],seg=lines.slice(s,Math.max(s,e));
+    const act=seg.reduce((x,l)=>x+l.length+1,0),exp=rl[i]*rho;
+    let note="";
+    if(!seg.length){noTr++;note="chưa có bản dịch"}
+    else if(rl[i]>0&&(act<exp*.6||act>exp*1.6)){off++;note="lệch độ dài so với bản gốc"}
+    rows.push({rawTitle:R[i].title,trTitle:title[i]||R[i].title,raw:R[i].text,tr:seg.join("\n"),note});
+  }
+  return{rows,stats:{anch:anchors.length,split:n-anchors.length,off,noTr}};
+}
+async function fixAllTitles(){
+  if(edRunning||!ed)return;
+  const mdl=(ed.model||"").trim()||cfg.model.trim();
+  if(!keys().length||!mdl){edSay("Hãy nhập API key và model ở mục Kết nối AI.",1);return}
+  const rs=edRows.filter(r=>CJK1.test(r.trTitle||""));
+  if(!rs.length){edSay("Không có tên chương nào còn chữ Trung.");return}
+  edRunning=true;edAbort=new AbortController();renderEd();
+  let fixed=0;
+  try{
+    for(let i=0;i<rs.length;i+=40){
+      const part=rs.slice(i,i+40);
+      edSay(`Đang dịch tên chương ${i+1}-${Math.min(i+40,rs.length)}/${rs.length}…`);
+      const out=(await repairHan(part.map(r=>r.trTitle).join("\n"),mdl)).split("\n");
+      for(let k=0;k<part.length;k++){if(out[k]&&!CJK1.test(out[k])){part[k].trTitle=out[k].trim();fixed++;await put("edch",part[k])}}
+      bump();
+    }
+    edSay(`Đã dịch ${fixed}/${rs.length} tên chương. Tên nào còn chữ Trung hãy sửa tay trong chương đó.`,fixed<rs.length);
+  }catch(e){edSay(e.name==="AbortError"?"Đã dừng.":"Lỗi khi dịch tên chương: "+e.message,1)}
+  edRunning=false;renderEd();renderEdLib();
+}
+/* ---------- Làm sạch: dòng trống, ký tự đánh dấu, từ rác, ghi chú của AI ---------- */
+const MARK_LINE=/^[\-*_=~#·•◆◇◈※★☆▪■□●○+\u2500-\u257f\s]{3,}$/;
+const JUNK_SHORT=[
+  /^(?:dưới đây là|đây là|sau đây là)\s+(?:bản\s+)?dịch\b/i,
+  /^(?:bản dịch|translation|here is the translation|here's the translation)\s*[:：]?$/i,
+  /^(?:ghi chú|lưu ý|chú thích|note|notes|translator'?s note)\s*[:：]/i,
+  /^[\(\[（【](?:ghi chú|lưu ý|chú thích|note|tn|dịch giả)[^\)\]）】]{0,160}[\)\]）】]$/i,
+  /(?:https?:\/\/|www\.)\S+/i,
+  /\b[a-z0-9-]+\.(?:com|net|org|cc|la|vn|info|xyz)\b/i,
+  /(?:本章未完|请记住本站|最新章节|手机用户请|手机阅读|笔趣阁|天才一秒记住|求推荐|求收藏|求月票|求订阅|上一章|下一章|章节目录|加入书签)/,
+  /(?:đọc truyện (?:tại|trên)|truyện được (?:đăng|dịch) (?:tại|bởi)|mời (?:các )?bạn (?:đọc|ủng hộ)|cảm ơn (?:các )?bạn đã đọc|nguồn\s*[:：])/i
+];
+const junkOf=()=>String((ed&&ed.junk)||"").split("\n");
+const zeroSt=()=>({blank:0,mark:0,junk:0,heading:0});
+function addSt(a,b){for(const k in a)a[k]+=(b&&b[k])||0;return a}
+function cleanJunk(text,extra,opts){
+  opts=opts||{};const st=zeroSt(),ex=(extra||[]).map(x=>String(x).trim()).filter(Boolean),out=[];
+  const t=String(text||"").replace(/\r/g,"").replace(/[\u200b-\u200d\u2060\ufeff\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,"")
+    .replace(/<\/?(?:text|translation|source)>/gi,"").replace(/^```\w*$/gm,"");
+  for(const line of t.split("\n")){
+    let l=line.replace(/[\u00a0\u3000]/g," ").trim();
+    if(!l){st.blank++;continue}
+    if(/^={3,}\s*[A-Za-z ]+\s*={3,}/.test(l)||MARK_LINE.test(l)){st.mark++;continue}
+    l=l.replace(/\*\*(.+?)\*\*/g,"$1").replace(/__(.+?)__/g,"$1").replace(/^#{1,6}\s+/,"").replace(/^\[\d{1,3}\]\s+/,"").trim();
+    if(!l){st.mark++;continue}
+    if(ex.some(k=>l.includes(k))){st.junk++;continue}
+    if(l.length<=150&&JUNK_SHORT.some(re=>re.test(l))){st.junk++;continue}
+    if(!opts.keepHeading&&l.length<=80&&CH.test(l)&&!/[.!?…"”»]$/.test(l)){st.heading++;continue}
+    out.push(l);
+  }
+  return{text:out.join("\n"),stats:st};
+}
+const cleanTitle=t=>String(t||"").replace(/={3,}\s*TITLE\s*={3,}/i,"").replace(/[*_#`]+/g,"").replace(/\s+/g," ").trim();
+function cleanRows(rows,junk,opts){
+  const st=zeroSt();
+  for(const r of rows){
+    for(const k of ["raw","tr"]){const c=cleanJunk(r[k],junk,opts);r[k]=c.text;addSt(st,c.stats)}
+    r.trTitle=cleanTitle(r.trTitle);r.rawTitle=cleanTitle(r.rawTitle);
+  }
+  return st;
+}
+/* Kiểm tra ranh giới chương dựa trên độ dài bản gốc. Nếu hai chương liền nhau lệch ngược chiều (chương này quá dài, chương kia quá ngắn)
+   mà tổng vẫn khớp, nghĩa là đoạn dịch bị đặt nhầm chương: gộp rồi chia lại theo tỷ lệ độ dài của bản gốc */
+function fixBoundaries(rows){
+  const rl=rows.map(r=>r.raw.length),tl=rows.map(r=>r.tr.length);
+  const rho=(tl.reduce((a,b)=>a+b,0)||1)/(rl.reduce((a,b)=>a+b,0)||1);
+  let fixed=0;
+  for(let i=0;i<rows.length-1;i++){
+    const a=rows[i],b=rows[i+1];
+    if(!rl[i]||!rl[i+1])continue;
+    const ra=tl[i]/(rl[i]*rho),rb=tl[i+1]/(rl[i+1]*rho),comb=(tl[i]+tl[i+1])/((rl[i]+rl[i+1])*rho);
+    if(((ra>1.5&&rb<0.67)||(ra<0.67&&rb>1.5))&&comb>0.8&&comb<1.25){
+      const lines=(a.tr+"\n"+b.tr).split("\n").filter(Boolean),bd=splitRange(lines,0,lines.length,[rl[i],rl[i+1]]);
+      a.tr=lines.slice(bd[0],bd[1]).join("\n");b.tr=lines.slice(bd[1],bd[2]).join("\n");
+      a.note=b.note="đã chia lại theo bản gốc";tl[i]=a.tr.length;tl[i+1]=b.tr.length;fixed++;i++;
+    }
+  }
+  return fixed;
+}
+function flagOutliers(rows){
+  const rl=rows.map(r=>r.raw.length),tl=rows.map(r=>r.tr.length);
+  const rho=(tl.reduce((a,b)=>a+b,0)||1)/(rl.reduce((a,b)=>a+b,0)||1);let off=0;
+  rows.forEach((r,i)=>{if(rl[i]&&(tl[i]<rl[i]*rho*.6||tl[i]>rl[i]*rho*1.6)){off++;if(!r.note)r.note="lệch độ dài so với bản gốc"}});
+  return off;
+}
+function cleanLine(){
+  const c=ed&&ed.cleanStat;if(!c)return"";
+  return (c.blank+c.mark+c.junk+c.heading)?`Đã làm sạch: ${c.blank} dòng trống, ${c.mark} dòng hoặc ký tự đánh dấu, ${c.junk} dòng rác hoặc ghi chú của AI, ${c.heading} dòng tiêu đề lẫn trong nội dung.`:"Đã làm sạch: không có gì cần xoá.";
+}
+async function cleanAll(){
+  if(edRunning||!ed)return;
+  if(!confirm("Làm sạch lại toàn bộ bản gốc, bản dịch và bản đã sửa? Sẽ xoá dòng trống, ký tự đánh dấu, ghi chú của AI, từ rác (kể cả các cụm bạn đã nhập). Không hoàn tác được."))return;
+  const st=zeroSt();let n=0;
+  for(const r of edRows){
+    let ch=false;
+    for(const k of ["raw","tr","out","out1","out2"]){if(!r[k])continue;const c=cleanJunk(r[k],junkOf());if(c.text!==r[k]){r[k]=c.text;ch=true}addSt(st,c.stats)}
+    const t=cleanTitle(r.trTitle);if(t!==r.trTitle){r.trTitle=t;ch=true}
+    if(ch){n++;await put("edch",r)}
+  }
+  ed.cleanStat=st;await edSave();renderEd();
+  edSay(`Làm sạch xong, ${n} chương có thay đổi. ${cleanLine()}`);
+}
 const edId=(pid,i)=>pid+":"+String(i).padStart(5,"0");
-async function createProject(p,rows){
-  p.id="e"+Date.now();p.updated=Date.now();p.n=rows.length;p.done=0;
-  const rs=rows.map((r,i)=>({id:edId(p.id,i),pid:p.id,idx:i,rawTitle:r.rawTitle||"",trTitle:r.trTitle||"",raw:r.raw||"",tr:r.tr||"",out:"",notes:"",status:"",accept:true}));
+async function createProject(p,rows,stats){
+  p.id="e"+Date.now();p.updated=Date.now();p.n=rows.length;p.done=0;if(stats)p.cleanStat=stats;
+  const rs=rows.map((r,i)=>({id:edId(p.id,i),pid:p.id,idx:i,rawTitle:r.rawTitle||"",trTitle:r.trTitle||"",raw:r.raw||"",tr:r.tr||"",out:"",notes:"",status:"",accept:true,note:r.note||""}));
   await put("eds",p);await tx("edch","readwrite",s=>rs.forEach(v=>s.put(v)));
   eds.push(p);await openEd(p.id);
 }
@@ -590,6 +752,7 @@ async function toEditor(b){
   if(old&&confirm("Đã có dự án biên tập từ truyện này. Bấm OK để mở lại dự án đó, Hủy để tạo dự án mới.")){showTab("ed");await openEd(old.id);return}
   const cs=(book&&book.id===b.id?chunks:await tx("chunks","readonly",s=>s.index("book").getAll(b.id))).slice().sort((x,y)=>x.idx-y.idx);
   const multi=cs.some(x=>x.title!=="Mở đầu"),m=new Map();
+  /* Mỗi đoạn dịch mang sẵn số chương của bản gốc, nên ghép lại đúng chương và theo thứ tự đoạn */
   for(const c of cs){
     if(!c.tr||(multi&&c.title==="Mở đầu"))continue;
     if(!m.has(c.ch))m.set(c.ch,{rawTitle:c.title,trTitle:c.title,raw:[],tr:[]});
@@ -597,8 +760,10 @@ async function toEditor(b){
   }
   const rows=[...m.values()].map(g=>({rawTitle:g.rawTitle,trTitle:g.trTitle,raw:g.raw.join("\n"),tr:g.tr.join("\n")}));
   if(!rows.length){alert("Truyện này chưa có đoạn nào đã dịch.");return}
+  const st=cleanRows(rows,[]),fixed=fixBoundaries(rows),off=flagOutliers(rows);
   showTab("ed");
-  await createProject({title:b.title+" (biên tập)",sl:b.sl,tl:b.tl,gl:b.gl||"",chars:b.chars||"",styleId:b.styleId||"",extra:"",model:"",from:b.id,opts:{spell:true,compare:true,gloss:true,pron:true,notes:true}},rows);
+  await createProject({title:b.title+" (biên tập)",sl:b.sl,tl:b.tl,gl:b.gl||"",chars:b.chars||"",styleId:b.styleId||"",extra:"",model:"",junk:"",from:b.id,opts:{spell:true,compare:true,gloss:true,pron:true,notes:true}},rows,st);
+  edSay(`Đã chuyển sang biên tập: ${rows.length} chương, ghép đúng chương theo bản gốc. ${cleanLine()}${fixed?` Đã chia lại ranh giới ${fixed} cặp chương theo độ dài bản gốc.`:""}${off?` ${off} chương lệch độ dài cần kiểm tra.`:""}`);
 }
 function charsFor(t,low){
   t=(t||"").trim();if(t.length<=5000)return t;
@@ -854,7 +1019,7 @@ const CJKG=/[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff01-\uff65]/
 const hanCount=t=>((t||"").match(CJKG)||[]).length;
 const PMAP=[[/。/g,"."],[/，/g,", "],[/：/g,": "],[/；/g,"; "],[/！/g,"!"],[/？/g,"?"],[/[“”「」『』]/g,'"'],[/[‘’]/g,"'"],[/、/g,", "],[/（/g,"("],[/）/g,")"],[/[《》〈〉]/g,'"'],[/【/g,"["],[/】/g,"]"],[/\u3000/g," "]];
 const fixPunct=t=>PMAP.reduce((s,p)=>s.replace(p[0],p[1]),t);
-const lenPct=(T,out)=>{const k=out.length/Math.max(1,T.length);return(k<.7||k>1.6)?Math.round(k*100):null};
+const lenPct=(T,out)=>{if(!T.length)return null;const k=out.length/Math.max(1,T.length);return(k<.7||k>1.6)?Math.round(k*100):null};
 function finalize(r){
   const w=[];
   if(r.dupWarn)w.push("Bản sau bước 2 vẫn dài "+r.dupPct+"% so với bản trước (quá 110%), có thể còn nội dung lặp.");
@@ -936,7 +1101,9 @@ async function repairHan(text,mdl){
 }
 
 async function step1(r,mdl){
+  r.tr=cleanJunk(r.tr,junkOf()).text;r.raw=cleanJunk(r.raw,junkOf()).text;
   const o=ed.opts,T=r.tr;let t=T;r.notes="";
+  if(!T.trim()){r.out="";r.out1="";r.han1=0;r.han=0;r.lenWarn=null;r.warns=["Chương chưa có bản dịch, hãy chạy bước 2 để dịch từ bản gốc."];r.status="warn";r.accept=true;r.manual=false;r.edited=false;return}
   if(o.spell||o.gloss||o.pron){
     const pcs=T.length<=4500?[T]:splitText(T,4500),outs=[],notes=[];
     for(const pc of pcs){const x=await editPiece(pc,mdl);outs.push(x.text);if(x.notes)notes.push(x.notes)}
@@ -948,16 +1115,18 @@ async function step1(r,mdl){
 }
 
 async function step2(r,mdl){
+  r.raw=cleanJunk(r.raw,junkOf()).text;
   const T=r.out||r.tr,R=r.raw,rl=R.length,single=T.length+rl<=14000;
-  const pcs=single?[T]:splitText(T,4500);let acc=0;const outs=[],covs=[],miss=[],wrong=[],extra=[];
+  const empty=!T.trim(),rawPcs=empty?splitText(R,4000):null;let pi=0;
+  const pcs=empty?rawPcs.map(()=>""):(single?[T]:splitText(T,4500));let acc=0;const outs=[],covs=[],miss=[],wrong=[],extra=[];
   for(const pc of pcs){
-    const seg=single?R:R.slice(Math.max(0,Math.floor((acc/T.length-.12)*rl)),Math.min(rl,Math.ceil(((acc+pc.length)/T.length+.12)*rl)));
+    const seg=empty?rawPcs[pi++]:single?R:R.slice(Math.max(0,Math.floor((acc/T.length-.12)*rl)),Math.min(rl,Math.ceil(((acc+pc.length)/T.length+.12)*rl)));
     acc+=pc.length;
     const x=await comparePiece(pc,seg,mdl);
     outs.push(x.text);if(x.cov!=null)covs.push(x.cov);miss.push(...x.miss);wrong.push(...x.wrong);extra.push(...x.extra);
   }
   let out=await repairHan(fixPunct(outs.join("\n").trim()),mdl);
-  const base=(r.out1||r.tr).length,lim=base*1.1;
+  const base=(r.out1||r.tr).length,lim=base?base*1.1:Infinity;
   const dl=dedupLocal(out,40,(ed.dupSim||85)/100);out=dl.text;r.dupRemoved=dl.removed;r.dupLog=dl.log;r.dupAI=false;
   if(out.length>lim){out=await dedupAI(out,mdl);r.dupAI=true;}
   r.dupWarn=out.length>lim;r.dupPct=Math.round(out.length/Math.max(1,base)*100);
@@ -1092,14 +1261,16 @@ function renderReport(){
   sec.append(el("div",{cls:"row",style:"margin-top:8px"},el("button",{textContent:"Tải báo cáo (.txt)",on:{click:()=>save(new Blob([reportText()],{type:"text/plain;charset=utf-8"}),ed.title.replace(/[\\/:*?"<>|]+/g,"_")+"-bao-cao.txt")}})));
   return sec;
 }
-const edFinal=()=>edRows.map(r=>({title:r.trTitle||("Chương "+(r.idx+1)),text:bestTxt(r)}));
+const edFinal=()=>edRows.map(r=>({title:r.trTitle||("Chương "+(r.idx+1)),text:cleanText(bestTxt(r))}));
 async function edEpub(){
   if(!edRows.length)return;
+  const all=edFinal(),chs=all.filter(c=>c.text),skip=all.length-chs.length;
+  if(!chs.length){edSay("Chưa có chương nào có nội dung để xuất.",1);return}
   const cv=await coverBytes(ed.title,ed.author||"");
-  epubFrom(ed.title,ed.tl,edFinal(),cv);
-  edSay(`Đã xuất EPUB: ${edRows.length} chương. Chương nào chưa xem lại thì dùng bản biên tập lần 2.`);
+  epubFrom(ed.title,ed.tl,chs,cv);
+  edSay(`Đã xuất EPUB: ${chs.length} chương, đã bỏ dòng trống${skip?`, bỏ qua ${skip} chương không có nội dung`:""}.`);
 }
-function edTxt(){if(!edRows.length)return;save(new Blob([edFinal().map(c=>c.title+"\n\n"+c.text).join("\n\n\n")],{type:"text/plain;charset=utf-8"}),ed.title.replace(/[\\/:*?"<>|]+/g,"_")+".txt");edSay("Đã xuất TXT.")}
+function edTxt(){if(!edRows.length)return;save(new Blob([edFinal().filter(c=>c.text).map(c=>c.title+"\n\n"+c.text).join("\n\n\n")],{type:"text/plain;charset=utf-8"}),ed.title.replace(/[\\/:*?"<>|]+/g,"_")+".txt");edSay("Đã xuất TXT.")}
 function renderEd(){
   const W=$("edWs");W.textContent="";
   if(!ed){W.append(el("section",{},el("p",{cls:"hint",textContent:"Chọn một dự án hoặc tạo dự án mới từ file. Truyện đã dịch xong ở tab Dịch truyện có nút Biên tập để chuyển sang đây."})));return}
@@ -1107,10 +1278,10 @@ function renderEd(){
   const head=el("section",{},
     el("input",{value:ed.title,"aria-label":"Tên dự án",style:"font:600 17px Georgia,serif;margin-bottom:6px",on:{change:async e=>{const v=e.target.value.trim();if(v){ed.title=v;await edSave();renderEdLib()}else e.target.value=ed.title}}}),
     el("div",{cls:"bar"},el("i",{style:"width:"+pct+"%"})),
-    el("pre",{cls:"nt",textContent:stepLine(1)+"\n"+stepLine(2)}),
+    el("pre",{cls:"nt",textContent:stepLine(1)+"\n"+stepLine(2)}),el("p",{cls:"hint",textContent:cleanLine()}),
     el("div",{cls:"row",style:"margin:10px 0"},
       ...stepBtns(1),...stepBtns(2),el("button",{disabled:edRunning,textContent:"Chạy tự động cả hai bước",on:{click:()=>runEd(0)}}),...dedupBtns(),
-      el("button",{textContent:"Xuất EPUB",on:{click:edEpub}}),el("button",{textContent:"Xuất .txt",on:{click:edTxt}})),
+      el("button",{textContent:"Xuất EPUB",on:{click:edEpub}}),el("button",{textContent:"Xuất .txt",on:{click:edTxt}}),el("button",{disabled:edRunning,textContent:"Làm sạch lại",title:"Xoá dòng trống, ký tự đánh dấu, ghi chú của AI và từ rác",on:{click:cleanAll}})),
     el("div",{id:"edStatus",role:"status"}),keepRow(),authorRow());
   const ck=(k,l)=>el("label",{cls:"chk"},el("input",{type:"checkbox",checked:o[k],disabled:dis,on:{change:async e=>{o[k]=e.target.checked;await edSave()}}})," "+l);
   const ss=el("select",{disabled:dis,on:{change:async e=>{ed.styleId=e.target.value;await edSave()}}},el("option",{value:"",textContent:"(Không dùng văn phong)"}));
@@ -1123,12 +1294,15 @@ function renderEd(){
       el("div",{},el("label",{textContent:"Model riêng cho biên tập"}),el("input",{value:ed.model||"",placeholder:"Để trống = model ở Kết nối AI",disabled:dis,on:{change:async e=>{ed.model=e.target.value;await edSave()}}}))),
     ...ta("Hướng dẫn thêm (tùy chọn)","extra","Ví dụ: giữ giọng cổ trang, không đổi cách xưng hô đã thống nhất…",70),
     ...ta("Bảng thuật ngữ và tên riêng (Gốc = Dịch)","gl","Gốc = Dịch",120),
-    ...ta("Bảng nhân vật và quan hệ","chars","Tên gốc | Tên dịch | Giới tính | Xưng hô | Quan hệ",120));
+    ...ta("Bảng nhân vật và quan hệ","chars","Tên gốc | Tên dịch | Giới tính | Xưng hô | Quan hệ",120),
+    ...ta("Từ hoặc cụm từ rác cần xoá (mỗi dòng một mục, dòng chứa cụm này sẽ bị xoá)","junk","Ví dụ: tên trang web, câu quảng cáo…",70));
   const list=el("section",{},el("h2",{textContent:"Các chương"}),el("p",{cls:"hint",textContent:"Chương chưa biên tập hoặc không chọn \"Dùng bản đã sửa\" sẽ giữ nguyên bản dịch cũ khi xuất file."}));
+  const nT=edRows.filter(r=>CJK1.test(r.trTitle||"")).length;
+  if(nT)list.append(el("button",{disabled:dis,textContent:`Dịch ${nT} tên chương còn chữ Trung`,on:{click:fixAllTitles}}));
   edRows.slice(0,edShow).forEach(r=>{
     const open=edOpen.has(r.id),badge=bdg(r);
     list.append(el("div",{cls:"tm",style:"grid-template-columns:2.4em 1fr auto auto"},el("span",{textContent:r.idx+1}),
-      el("span",{textContent:(r.trTitle||"(không tên)")+" · "+badge+(r.raw?"":" · không có bản gốc")}),
+      el("span",{textContent:(r.trTitle||"(không tên)")+" · "+badge+(r.raw?"":" · không có bản gốc")+(r.note?" · "+r.note:"")}),
       el("button",{textContent:open?"Đóng":"Xem",on:{click:()=>{open?edOpen.delete(r.id):edOpen.add(r.id);renderEd()}}}),
       el("button",{textContent:"Làm lại",disabled:dis,on:{click:()=>redoRow(r)}})));
     if(open){
@@ -1151,12 +1325,25 @@ $("edGlIn").onchange=async e=>{const f=e.target.files[0];if(f)$("edGl").value=aw
 $("edGo").onclick=async()=>{
   const ft=$("edTr").files[0],fr=$("edRaw").files[0];
   if(!ft){alert("Hãy chọn file bản dịch (.txt).");return}
-  const T=chaptersOf(await readTxt(ft)),R=fr?chaptersOf(await readTxt(fr)):[];
+  const jl=$("edJunk").value.split("\n"),st=zeroSt();
+  const c1=cleanJunk(await readTxt(ft),jl,{keepHeading:true});addSt(st,c1.stats);
+  const rt=c1.text,T=chaptersOf(rt);
   if(!T.length){alert("File bản dịch không có nội dung.");return}
-  const pr=align(R,T),m=pr.filter(x=>x.r).length;
-  await createProject({title:$("edTitle").value.trim()||ft.name.replace(/\.txt$/i,""),sl:$("edSl").value,tl:$("edTl").value,gl:$("edGl").value,chars:"",styleId:"",extra:"",model:"",from:"",opts:{spell:true,compare:true,gloss:true,pron:true,notes:true}},
-    pr.map(({t,r})=>({rawTitle:r?r.title:"",trTitle:t.title,raw:r?r.text:"",tr:t.text})));
-  edSay(`Đã tạo dự án: ${T.length} chương dịch, ${R.length} chương gốc, ghép được ${m}.`);
+  let R=[];
+  if(fr){const c2=cleanJunk(await readTxt(fr),jl,{keepHeading:true});addSt(st,c2.stats);R=chaptersOf(c2.text)}
+  const base={title:$("edTitle").value.trim()||ft.name.replace(/\.txt$/i,""),sl:$("edSl").value,tl:$("edTl").value,gl:$("edGl").value,chars:"",styleId:"",extra:"",model:"",junk:$("edJunk").value,from:"",opts:{spell:true,compare:true,gloss:true,pron:true,notes:true}};
+  let rows,msg;
+  if(fr&&R.length&&$("edRebuild").checked){
+    const R2=(R.length>1&&R[0].title==="Phần đầu")?R.slice(1):R;
+    const res=rebuildByRaw(R2,rt),s2=res.stats;rows=res.rows;
+    msg=`Đã ghép lại theo bản gốc: ${rows.length} chương. ${s2.anch} chương khớp theo tiêu đề có sẵn, ${s2.split} chương chia theo độ dài${s2.off?`, ${s2.off} chương lệch độ dài cần kiểm tra`:""}${s2.noTr?`, ${s2.noTr} chương chưa có bản dịch`:""}.`;
+  }else{
+    const pr=align(R,T);rows=pr.map(({t,r})=>({rawTitle:r?r.title:"",trTitle:t.title,raw:r?r.text:"",tr:t.text}));
+    const fx=fixBoundaries(rows),off=flagOutliers(rows);
+    msg=`Đã tạo dự án: ${T.length} chương dịch, ${R.length} chương gốc, ghép được ${pr.filter(x=>x.r).length}.${fx?` Đã chia lại ranh giới ${fx} cặp chương.`:""}${off?` ${off} chương lệch độ dài cần kiểm tra.`:""}`;
+  }
+  addSt(st,cleanRows(rows,jl));
+  await createProject(base,rows,st);edSay(msg+" "+cleanLine());
 };
 /* ---------- Nhận truyện từ tab Cào truyện ---------- */
 window.importChapters=async o=>{
