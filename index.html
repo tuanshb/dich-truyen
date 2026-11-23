@@ -189,11 +189,12 @@ async function callAI(sys,user,sig,k,mdl){
     const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`,{method:"POST",signal:sig,headers:{"Content-Type":"application/json","x-goog-api-key":k},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:"user",parts:[{text:user}]}],generationConfig:{temperature:.4}})});
     const j=await r.json().catch(()=>({}));if(!r.ok)throw fail(r,j);
     const p=(((j.candidates||[])[0]||{}).content||{}).parts;if(!p)throw new Error("Gemini không trả về nội dung (có thể bị bộ lọc chặn).");
+    lastTrunc=((j.candidates||[])[0]||{}).finishReason==="MAX_TOKENS";
     return p.map(x=>x.text||"").join("");
   }
   const base=(cfg.base.trim()||PRESET[cfg.prov][0]).replace(/\/+$/,"");if(!base)throw new Error("Chưa nhập Base URL.");
   const r=await fetch(base+"/chat/completions",{method:"POST",signal:sig,headers:{"Content-Type":"application/json",Authorization:"Bearer "+k},body:JSON.stringify({model:cfg.prov==="openrouter"?ms[0]:m,...(cfg.prov==="openrouter"&&ms.length>1?{models:ms}:{}),temperature:.4,messages:[{role:"system",content:sys},{role:"user",content:user}]})});
-  const j=await r.json().catch(()=>({}));if(!r.ok)throw fail(r,j);if(!j.choices||!j.choices[0])throw new Error((j.error&&j.error.message)||"Nhà cung cấp không trả về nội dung.");return j.choices[0].message.content;
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw fail(r,j);if(!j.choices||!j.choices[0])throw new Error((j.error&&j.error.message)||"Nhà cung cấp không trả về nội dung.");lastTrunc=j.choices[0].finish_reason==="length";return j.choices[0].message.content;
 }
 const keys=()=>[...new Set(cfg.key.split(/[;\n]+/).map(x=>x.trim()).filter(Boolean))];
 const cool={};let ki=0;
@@ -225,8 +226,9 @@ function charBlock(low){
   }
   return["Character and relationship table (authoritative; always keep names, gender, pronouns, forms of address and relationships consistent with it across all chapters):\n"+use];
 }
-async function translateChunk(c){
-  const st=styles.find(s=>s.id===book.styleId)||styles[0],low=c.src.toLowerCase();
+async function translateChunk(c,srcOv,depth){
+  const src=srcOv||c.src;depth=depth||0;
+  const st=styles.find(s=>s.id===book.styleId)||styles[0],low=src.toLowerCase();
   const g=parseGl(book.gl).filter(([a])=>low.includes(a.toLowerCase()));
   const sys=["You are a professional literary translator working on fiction.",
     `Translate from ${book.sl&&book.sl!=="Tự nhận diện"?book.sl:"the source language (detect it automatically)"} into ${book.tl}.`,
@@ -238,12 +240,23 @@ async function translateChunk(c){
   const pv=chunks[c.idx-1];
   if(pv&&pv.tr)user+="Context only, do not translate again. End of previous passage:\n"+pv.src.slice(-300)+"\n=> "+pv.tr.slice(-300)+"\n\n";
   if((!pv||pv.ch!==c.ch)&&c.title!=="Mở đầu")user+=`This passage starts a new chapter titled "${c.title}". Begin your output with one line "===TITLE=== " followed by that chapter title translated into ${book.tl}, then the translation on the following lines.\n\n`;
-  user+="Translate this text:\n<text>\n"+c.src+"\n</text>";
-  const raw=await ask(sys,user);let tr=raw,terms=[];
+  user+="Translate this text:\n<text>\n"+src+"\n</text>";
+  const raw=await ask(sys,user);
+  if(lastTrunc&&depth<2&&src.length>800){
+    const parts=splitText(src,Math.ceil(src.length/2)+80);
+    if(parts.length>1){
+      const rs=[];for(const p of parts)rs.push(await translateChunk(c,p,depth+1));
+      let jt=rs.map(x=>x.tr).join("\n");
+      if(depth===0){const pv3=chunks[c.idx-1];if(pv3&&pv3.tr)jt=trimOverlap(pv3.tr,jt)}
+      return{tr:jt,terms:rs.flatMap(x=>x.terms),ttl:rs[0].ttl};
+    }
+  }
+  let tr=raw,terms=[];
   const i=raw.indexOf("===TERMS===");
   if(i>=0){tr=raw.slice(0,i);const m=raw.slice(i).match(/\[[\s\S]*\]/);if(m)try{terms=JSON.parse(m[0])}catch(e){}}
   tr=fixNl(tr).trim();let ttl="";const tm=tr.match(/^===TITLE===[ \t]*(.*)\n?/);
   if(tm){ttl=tm[1].trim();tr=tr.slice(tm[0].length).trim()}
+  if(depth===0){const pv2=chunks[c.idx-1];if(pv2&&pv2.tr)tr=trimOverlap(pv2.tr,tr)}
   return{tr,terms,ttl};
 }
 function addTerms(ts){
@@ -634,7 +647,9 @@ async function fixAllTitles(){
 }
 /* ---------- Làm sạch: dòng trống, ký tự đánh dấu, từ rác, ghi chú của AI ---------- */
 const MARK_LINE=/^[\-*_=~#·•◆◇◈※★☆▪■□●○+\u2500-\u257f\s]{3,}$/;
+const TAIL_AD=/^(?:có thể bạn (?:quan tâm|thích)|truyện (?:cùng tác giả|khác của tác giả|đề cử|hay khác)|đề cử|giới thiệu truyện|推荐阅读|相关推荐|新书推荐|作者其他作品|同类推荐|猜你喜欢)/i;
 const JUNK_SHORT=[
+  /^(?:tác giả|作者)\s*[:：]/i,
   /^(?:dưới đây là|đây là|sau đây là)\s+(?:bản\s+)?dịch\b/i,
   /^(?:bản dịch|translation|here is the translation|here's the translation)\s*[:：]?$/i,
   /^(?:ghi chú|lưu ý|chú thích|note|notes|translator'?s note)\s*[:：]/i,
@@ -651,9 +666,11 @@ function cleanJunk(text,extra,opts){
   opts=opts||{};const st=zeroSt(),ex=(extra||[]).map(x=>String(x).trim()).filter(Boolean),out=[];
   const t=String(text||"").replace(/\r/g,"").replace(/[\u200b-\u200d\u2060\ufeff\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,"")
     .replace(/<\/?(?:text|translation|source)>/gi,"").replace(/^```\w*$/gm,"");
-  for(const line of t.split("\n")){
-    let l=line.replace(/[\u00a0\u3000]/g," ").trim();
+  const arr=t.split("\n");
+  for(let ix=0;ix<arr.length;ix++){
+    let l=arr[ix].replace(/[\u00a0\u3000]/g," ").trim();
     if(!l){st.blank++;continue}
+    if(out.length&&l.length<=80&&TAIL_AD.test(l)){st.junk+=arr.length-ix;break}
     if(/^={3,}\s*[A-Za-z ]+\s*={3,}/.test(l)||MARK_LINE.test(l)){st.mark++;continue}
     l=l.replace(/\*\*(.+?)\*\*/g,"$1").replace(/__(.+?)__/g,"$1").replace(/^#{1,6}\s+/,"").replace(/^\[\d{1,3}\]\s+/,"").trim();
     if(!l){st.mark++;continue}
@@ -668,7 +685,11 @@ const cleanTitle=t=>String(t||"").replace(/={3,}\s*TITLE\s*={3,}/i,"").replace(/
 function cleanRows(rows,junk,opts){
   const st=zeroSt();
   for(const r of rows){
-    for(const k of ["raw","tr"]){const c=cleanJunk(r[k],junk,opts);r[k]=c.text;addSt(st,c.stats)}
+    if(r.segs&&r.segs.length){
+      for(const g of r.segs)for(const k of ["raw","tr"]){const c=cleanJunk(g[k],junk,opts);g[k]=c.text;addSt(st,c.stats)}
+      r.segs=r.segs.filter(g=>g.raw||g.tr);
+      r.raw=r.segs.map(g=>g.raw).filter(Boolean).join("\n");r.tr=r.segs.map(g=>g.tr).filter(Boolean).join("\n");
+    }else for(const k of ["raw","tr"]){const c=cleanJunk(r[k],junk,opts);r[k]=c.text;addSt(st,c.stats)}
     r.trTitle=cleanTitle(r.trTitle);r.rawTitle=cleanTitle(r.rawTitle);
   }
   return st;
@@ -686,7 +707,7 @@ function fixBoundaries(rows){
     if(((ra>1.5&&rb<0.67)||(ra<0.67&&rb>1.5))&&comb>0.8&&comb<1.25){
       const lines=(a.tr+"\n"+b.tr).split("\n").filter(Boolean),bd=splitRange(lines,0,lines.length,[rl[i],rl[i+1]]);
       a.tr=lines.slice(bd[0],bd[1]).join("\n");b.tr=lines.slice(bd[1],bd[2]).join("\n");
-      a.note=b.note="đã chia lại theo bản gốc";tl[i]=a.tr.length;tl[i+1]=b.tr.length;fixed++;i++;
+      a.note=b.note="đã chia lại theo bản gốc";a.segs=b.segs=null;tl[i]=a.tr.length;tl[i+1]=b.tr.length;fixed++;i++;
     }
   }
   return fixed;
@@ -707,7 +728,8 @@ async function cleanAll(){
   const st=zeroSt();let n=0;
   for(const r of edRows){
     let ch=false;
-    for(const k of ["raw","tr","out","out1","out2"]){if(!r[k])continue;const c=cleanJunk(r[k],junkOf());if(c.text!==r[k]){r[k]=c.text;ch=true}addSt(st,c.stats)}
+    {const b0=r.raw+"|"+r.tr;cleanRow(r,st);if(r.raw+"|"+r.tr!==b0)ch=true}
+    for(const k of ["out","out1","out2"]){if(!r[k])continue;const c=cleanJunk(r[k],junkOf());if(c.text!==r[k]){r[k]=c.text;ch=true}addSt(st,c.stats)}
     const t=cleanTitle(r.trTitle);if(t!==r.trTitle){r.trTitle=t;ch=true}
     if(ch){n++;await put("edch",r)}
   }
@@ -717,7 +739,7 @@ async function cleanAll(){
 const edId=(pid,i)=>pid+":"+String(i).padStart(5,"0");
 async function createProject(p,rows,stats){
   p.id="e"+Date.now();p.updated=Date.now();p.n=rows.length;p.done=0;if(stats)p.cleanStat=stats;
-  const rs=rows.map((r,i)=>({id:edId(p.id,i),pid:p.id,idx:i,rawTitle:r.rawTitle||"",trTitle:r.trTitle||"",raw:r.raw||"",tr:r.tr||"",out:"",notes:"",status:"",accept:true,note:r.note||""}));
+  const rs=rows.map((r,i)=>({id:edId(p.id,i),pid:p.id,idx:i,rawTitle:r.rawTitle||"",trTitle:r.trTitle||"",raw:r.raw||"",tr:r.tr||"",out:"",notes:"",status:"",accept:true,note:r.note||"",segs:r.segs||null}));
   await put("eds",p);await tx("edch","readwrite",s=>rs.forEach(v=>s.put(v)));
   eds.push(p);await openEd(p.id);
 }
@@ -755,10 +777,11 @@ async function toEditor(b){
   /* Mỗi đoạn dịch mang sẵn số chương của bản gốc, nên ghép lại đúng chương và theo thứ tự đoạn */
   for(const c of cs){
     if(!c.tr||(multi&&c.title==="Mở đầu"))continue;
-    if(!m.has(c.ch))m.set(c.ch,{rawTitle:c.title,trTitle:c.title,raw:[],tr:[]});
+    if(!m.has(c.ch))m.set(c.ch,{rawTitle:c.title,trTitle:c.title,raw:[],tr:[],segs:[]});
     const g=m.get(c.ch);if(c.titleTr)g.trTitle=c.titleTr;g.raw.push(c.src);g.tr.push(c.tr);
+    g.segs.push(...(c.tr.length>6500?makeSegs(c.src,c.tr,4500):[{raw:c.src,tr:c.tr}]));
   }
-  const rows=[...m.values()].map(g=>({rawTitle:g.rawTitle,trTitle:g.trTitle,raw:g.raw.join("\n"),tr:g.tr.join("\n")}));
+  const rows=[...m.values()].map(g=>({rawTitle:g.rawTitle,trTitle:g.trTitle,raw:g.raw.join("\n"),tr:g.tr.join("\n"),segs:g.segs}));
   if(!rows.length){alert("Truyện này chưa có đoạn nào đã dịch.");return}
   const st=cleanRows(rows,[]),fixed=fixBoundaries(rows),off=flagOutliers(rows);
   showTab("ed");
@@ -925,7 +948,7 @@ function dedupBox(){
     el("p",{cls:"hint",textContent:`${state} · chương ${Math.min(c.i,c.n)}/${c.n}${c.title&&!c.done?": "+c.title:""} · đã xoá ${c.total} câu lặp trong ${c.chapters} chương`}));
 }
 function dedupBtns(){
-  if(!dedupCtl||dedupCtl.done)return[el("select",{title:"Độ giống tối thiểu để coi là lặp",disabled:edRunning,"aria-label":"Độ giống tối thiểu để coi là lặp",on:{change:async e=>{ed.dupSim=+e.target.value;await edSave()}}},...[[92,"Chặt (giống ≥92%)"],[85,"Vừa (giống ≥85%)"],[75,"Rộng (giống ≥75%)"]].map(([v,t])=>el("option",{value:String(v),textContent:t,selected:(ed.dupSim||85)===v}))),el("button",{disabled:edRunning,textContent:"Soát lặp toàn bộ",title:"Chỉ chạy khi bấm. So theo nội dung (bỏ dấu, dấu câu, khoảng trắng), chỉ trong từng chương, từ 40 ký tự.",on:{click:dedupAll}})];
+  if(!dedupCtl||dedupCtl.done)return[el("select",{title:"Độ giống tối thiểu để coi là lặp",disabled:edRunning,"aria-label":"Độ giống tối thiểu để coi là lặp",on:{change:async e=>{ed.dupSim=+e.target.value;await edSave()}}},...[[92,"Chặt (giống ≥92%)"],[85,"Vừa (giống ≥85%)"],[75,"Rộng (giống ≥75%)"]].map(([v,t])=>el("option",{value:String(v),textContent:t,selected:(ed.dupSim||85)===v}))),el("button",{disabled:edRunning,textContent:"Soát lặp toàn bộ",title:"Chỉ chạy khi bấm. So theo nội dung (bỏ dấu, dấu câu, khoảng trắng) và cả khối đoạn bị viết lại, chỉ trong từng chương, từ 40 ký tự.",on:{click:dedupAll}})];
   return[
     el("button",{cls:"p",textContent:dedupCtl.paused?"Soát tiếp":"Tạm dừng soát",on:{click:()=>dedupCtl.paused?dedupResume():dedupPause()}}),
     el("button",{textContent:"Dừng soát",on:{click:dedupStop}})];
@@ -943,7 +966,8 @@ async function dedupAll(){
       if(r.accept!==false){
         const cur=bestTxt(r);
         if(cur){
-          const res=dedupLocal(cur,40,(ed.dupSim||85)/100);
+          const th=(ed.dupSim||85)/100,bth=({92:.6,85:.5,75:.4})[ed.dupSim||85]||.5;
+          const r1=dedupLocal(cur,40,th),r2=dedupBlocks(r1.text,bth),res={text:r2.text,removed:r1.removed+r2.removed,log:[...r1.log,...r2.log].slice(0,10)};
           if(res.removed>0){
             r.out=res.text;r.edited=true;r.dupAll=(r.dupAll||0)+res.removed;r.dupLog=res.log;
             dedupCtl.total+=res.removed;dedupCtl.chapters++;
@@ -1022,13 +1046,179 @@ const fixPunct=t=>PMAP.reduce((s,p)=>s.replace(p[0],p[1]),t);
 const lenPct=(T,out)=>{if(!T.length)return null;const k=out.length/Math.max(1,T.length);return(k<.7||k>1.6)?Math.round(k*100):null};
 function finalize(r){
   const w=[];
-  if(r.dupWarn)w.push("Bản sau bước 2 vẫn dài "+r.dupPct+"% so với bản trước (quá 110%), có thể còn nội dung lặp.");
+  if(r.dupWarn)w.push("Bản sau bước 2 vẫn dài "+r.dupPct+"% so với bản trước (giới hạn dự kiến "+(r.dupLim||110)+"%), có thể còn nội dung lặp.");
   if(r.lenWarn!=null)w.push("Độ dài bản sửa còn "+r.lenWarn+"% so với bản cũ, hãy xem kỹ.");
   if(r.han>0)w.push("Còn "+r.han+" ký tự Trung sau khi xử lý.");
   r.warns=w;r.status=w.length?"warn":"ok";r.accept=true;r.manual=false;r.edited=false;
 }
 const bdg=r=>r.manual?"Đã chỉnh sửa":r.status==="warn"?"Cần xem lại":(r.s2===true||r.s2==="skip")?"Đã xử lý đủ":r.s1?"Xong bước 1":"Chưa xử lý";
 
+/* ---------- Căn đoạn gốc với đoạn dịch, chia khúc KHÔNG chồng lấn ---------- */
+let lastTrunc=false;
+function alignParas(R,T){
+  const n=R.length,m=T.length;if(!n||!m)return[];
+  const lr=R.map(x=>x.length),lt=T.map(x=>x.length),M=m+1;
+  const run=rho=>{
+    const mc=(a,b)=>Math.abs(Math.log((b+10)/(a*rho+10))),G=1.0,MG=0.45;
+    const cost=new Float32Array((n+1)*M).fill(1e9),back=new Uint8Array((n+1)*M);cost[0]=0;
+    const upd=(c,i,j,b)=>{const k=i*M+j;if(c<cost[k]){cost[k]=c;back[k]=b}};
+    for(let i=0;i<=n;i++)for(let j=0;j<=m;j++){
+      const c=cost[i*M+j];if(c>=1e9)continue;
+      if(i<n&&j<m)upd(c+mc(lr[i],lt[j]),i+1,j+1,1);
+      if(i<n)upd(c+G,i+1,j,2);
+      if(j<m)upd(c+G,i,j+1,3);
+      if(i+1<n&&j<m)upd(c+mc(lr[i]+lr[i+1],lt[j])+MG,i+2,j+1,4);
+      if(i<n&&j+1<m)upd(c+mc(lr[i],lt[j]+lt[j+1])+MG,i+1,j+2,5);
+    }
+    const ops=[];let i=n,j=m;
+    while(i>0||j>0){
+      const b=back[i*M+j];
+      if(b===1){ops.push({r:[i-1],t:[j-1]});i--;j--}
+      else if(b===2){ops.push({r:[i-1],t:[]});i--}
+      else if(b===3){ops.push({r:[],t:[j-1]});j--}
+      else if(b===4){ops.push({r:[i-2,i-1],t:[j-1]});i-=2;j--}
+      else if(b===5){ops.push({r:[i-1],t:[j-2,j-1]});i--;j-=2}
+      else break;
+    }
+    return ops.reverse();
+  };
+  /* tỉ lệ độ dài dịch/gốc ước lượng lần đầu từ tổng, rồi tính lại chỉ trên các cặp đã khớp để không bị lệch khi thiếu đoạn */
+  const rho0=(lt.reduce((a,b)=>a+b,0)||1)/(lr.reduce((a,b)=>a+b,0)||1);
+  let ops=run(rho0);
+  for(let it=0;it<2;it++){
+    let sr=0,st=0;for(const o of ops)if(o.r.length===1&&o.t.length===1){sr+=lr[o.r[0]];st+=lt[o.t[0]]}
+    const rho=sr&&st?st/sr:rho0;
+    if(Math.abs(rho/rho0-1)<0.02)break;
+    ops=run(rho);
+  }
+  return ops;
+}
+/* Chia một chương thành các khúc {raw,tr}: mỗi đoạn gốc và mỗi đoạn dịch chỉ thuộc đúng một khúc */
+function makeSegs(raw,tr,maxTr){
+  maxTr=maxTr||4000;
+  const R=String(raw||"").split("\n").filter(Boolean),T=String(tr||"").split("\n").filter(Boolean),L=a=>a.reduce((x,y)=>x+y.length+1,0);
+  if(!T.length)return R.length?splitText(R.join("\n"),3500).map(p=>({raw:p,tr:""})):[];
+  if(!R.length)return splitText(T.join("\n"),maxTr).map(p=>({raw:"",tr:p}));
+  if(L(T)<=maxTr&&L(R)<=maxTr*1.2)return[{raw:R.join("\n"),tr:T.join("\n")}];
+  if(R.length*T.length>6e6){
+    const pcs=splitText(T.join("\n"),maxTr),bd=splitRange(R,0,R.length,pcs.map(p=>p.length));
+    return pcs.map((p,k)=>({raw:R.slice(bd[k],bd[k+1]).join("\n"),tr:p}));
+  }
+  const segs=[];let cur={raw:[],tr:[]};
+  const flush=()=>{if(cur.raw.length||cur.tr.length)segs.push({raw:cur.raw.join("\n"),tr:cur.tr.join("\n")});cur={raw:[],tr:[]}};
+  for(const op of alignParas(R,T)){
+    op.r.forEach(k=>cur.raw.push(R[k]));op.t.forEach(k=>cur.tr.push(T[k]));
+    if(op.r.length&&op.t.length&&L(cur.tr)>=maxTr)flush();
+  }
+  flush();return segs;
+}
+function ensureSegs(r){
+  if(r.segs&&r.segs.length)return r.segs;
+  const base=(r.s1&&r.out1)?r.out1:r.tr;
+  r.segs=makeSegs(r.raw,base,4000);
+  if(base!==r.tr){r.segs.forEach(g=>{g.o1=g.tr});r.legacy=true}
+  return r.segs;
+}
+function cleanRow(r,st){
+  const J=junkOf(),one=t=>{const c=cleanJunk(t,J);if(st)addSt(st,c.stats);return c.text};
+  if(r.segs&&r.segs.length){
+    for(const g of r.segs)for(const k of ["raw","tr","o1","o2"])if(g[k])g[k]=one(g[k]);
+    r.segs=r.segs.filter(g=>g.raw||g.tr||g.o1||g.o2);
+    r.raw=r.segs.map(g=>g.raw).filter(Boolean).join("\n");r.tr=r.segs.map(g=>g.tr).filter(Boolean).join("\n");
+  }else{r.raw=one(r.raw);r.tr=one(r.tr)}
+}
+/* Soát khối đoạn bị dịch lại bằng câu chữ khác: chuỗi đoạn liên tiếp trùng nội dung với một chuỗi đoạn đã có trước đó */
+const STOPW=new Set("không những của và là cũng với một này đó được đã rồi khi thì như nhưng cho các từ trong ra vào lên xuống cái con người anh em tôi hắn nàng ngươi bọn chúng còn sẽ đang để mà nên vì nếu hay hoặc chỉ nữa lại đến đây kia ấy gì sao thế vậy nói rất quá lắm cả mọi mỗi bị bởi theo sau trước trên dưới có đều vẫn mới bằng nào ai đâu bao nhiêu".split(" "));
+const wset=p=>new Set(p.toLowerCase().replace(/[\p{P}\p{S}\d]+/gu," ").split(/\s+/).filter(w=>w.length>=3&&!STOPW.has(w)));
+function wsim(a,b){if(a.size<4||b.size<4)return -1;let n=0;const[s,l]=a.size<=b.size?[a,b]:[b,a];for(const w of s)if(l.has(w))n++;return n/s.size}
+function dedupBlocks(text,th){
+  th=th||0.5;
+  const P=text.split("\n").filter(x=>x.trim()),n=P.length;
+  if(n<6||n>1500)return{text:P.join("\n"),removed:0,log:[]};
+  const S=P.map(wset),dead=new Array(n).fill(false),log=[];let removed=0;
+  for(let j=3;j<n;j++){
+    if(dead[j])continue;
+    let best=null;
+    for(let i=0;i<j;i++){
+      if(dead[i])continue;
+      let len=0,strong=0,minS=1;
+      while(j+len<n&&i+len<j&&!dead[i+len]&&!dead[j+len]){
+        const s=wsim(S[i+len],S[j+len]);
+        if(s===-1){len++;continue}
+        if(s>=th){strong++;minS=Math.min(minS,s);len++;continue}
+        break;
+      }
+      while(len>0&&wsim(S[i+len-1],S[j+len-1])===-1)len--;
+      if((strong>=3||(strong>=2&&minS>=0.75))&&(!best||len>best.len))best={len,minS};
+    }
+    if(best){
+      for(let k=0;k<best.len;k++)dead[j+k]=true;
+      removed+=best.len;if(log.length<10)log.push({t:`[khối ${best.len} đoạn] `+P[j].slice(0,70)+"…",s:Math.round(best.minS*100)});
+      j+=best.len-1;
+    }
+  }
+  return{text:P.filter((_,k)=>!dead[k]).join("\n"),removed,log};
+}
+/* Dịch tab: bỏ các đoạn đầu của khúc mới nếu AI lỡ dịch lại phần ngữ cảnh của khúc trước */
+function trimOverlap(prevTr,newTr){
+  const prev=String(prevTr||"").split("\n").filter(x=>x.trim()).slice(-6).map(mkUnit),L=String(newTr||"").split("\n");
+  let i=0,cut=0;
+  while(i<L.length){
+    if(!L[i].trim()){i++;continue}
+    const u=mkUnit(L[i]);
+    if(u.k.length>=25&&prev.some(p=>dupScore(u,p,0.75))){cut++;i++}else break;
+  }
+  const rest=L.slice(i).join("\n").trim();
+  return(cut&&rest)?rest:newTr;
+}
+/* Tên riêng viết khác nhau: nhóm các tên chỉ khác dấu hoặc khác một chữ cái */
+const foldW=s=>s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase();
+function edit1(a,b){
+  if(a===b)return true;if(Math.abs(a.length-b.length)>1)return false;
+  let i=0;while(i<a.length&&i<b.length&&a[i]===b[i])i++;
+  if(a.length===b.length)return a.slice(i+1)===b.slice(i+1);
+  return a.length>b.length?a.slice(i+1)===b.slice(i):b.slice(i+1)===a.slice(i);
+}
+function scanNames(){
+  const cnt=new Map();
+  for(const r of edRows)for(const nm of (bestTxt(r).normalize("NFC").match(/\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+){1,3}/gu)||[]))cnt.set(nm,(cnt.get(nm)||0)+1);
+  const all=[...cnt.entries()].filter(e=>e[1]>=2).sort((a,b)=>b[1]-a[1]).slice(0,1500).map(([n,c])=>({n,c,sy:n.split(/\s+/).map(foldW)}));
+  const par=all.map((_,i)=>i),find=i=>par[i]===i?i:(par[i]=find(par[i]));
+  const close=(a,b)=>{
+    if(a.sy.length!==b.sy.length)return false;
+    let diff=0;
+    for(let k=0;k<a.sy.length;k++)if(a.sy[k]!==b.sy[k]){if(!edit1(a.sy[k],b.sy[k]))return false;diff++}
+    return diff<=1;
+  };
+  for(let i=0;i<all.length;i++)for(let j=i+1;j<all.length;j++)if(all[i].n!==all[j].n&&close(all[i],all[j]))par[find(j)]=find(i);
+  const gs=new Map();all.forEach((v,i)=>{const r=find(i);if(!gs.has(r))gs.set(r,[]);gs.get(r).push({n:v.n,c:v.c})});
+  return [...gs.values()].filter(g=>g.length>=2).map(g=>({variants:g.sort((a,b)=>b.c-a.c)})).sort((a,b)=>b.variants.reduce((x,v)=>x+v.c,0)-a.variants.reduce((x,v)=>x+v.c,0));
+}
+async function unifyName(from,to){
+  const re=new RegExp("(?<![\\p{L}])"+from.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"(?![\\p{L}])","gu");
+  let n=0;
+  for(const r of edRows){
+    let ch=false;
+    const sub=v=>{if(!v)return v;const t=v.replace(re,()=>{n++;return to});if(t!==v)ch=true;return t};
+    for(const k of ["tr","out","out1","out2"])r[k]=sub(r[k]);
+    if(r.segs)r.segs.forEach(g=>{for(const k of ["tr","o1","o2"])g[k]=sub(g[k])});
+    if(ch)await put("edch",r);
+  }
+  return n;
+}
+let edNames=null;
+function namesBox(){
+  if(!edNames)return el("span",{});
+  const sec=el("section",{},el("h2",{textContent:`Tên riêng nghi ngờ không thống nhất (${edNames.length})`}));
+  if(!edNames.length){sec.append(el("p",{cls:"hint",textContent:"Không phát hiện nhóm tên nào giống nhau mà viết khác nhau."}));return sec}
+  sec.append(el("p",{cls:"hint",textContent:"Bấm vào tên muốn giữ. Các biến thể còn lại trong nhóm sẽ được đổi sang tên đó trên toàn bộ dự án."}));
+  edNames.slice(0,25).forEach(g=>sec.append(el("div",{cls:"row",style:"align-items:center;margin:4px 0"},
+    ...g.variants.map(v=>el("button",{disabled:edRunning,textContent:`Dùng «${v.n}» (${v.c})`,on:{click:async()=>{
+      let t=0;for(const o of g.variants)if(o.n!==v.n)t+=await unifyName(o.n,v.n);
+      edNames=edNames.filter(x=>x!==g);renderEd();edSay(`Đã thống nhất thành «${v.n}»: ${t} chỗ.`);
+    }}})))));
+  return sec;
+}
 async function editPiece(pc,mdl){
   const o=ed.opts,low=pc.toLowerCase();
   const g=parseGl(ed.gl).filter(([a,b])=>low.includes(a.toLowerCase())||(b&&low.includes(b.toLowerCase())));
@@ -1047,19 +1237,21 @@ async function editPiece(pc,mdl){
   if(g.length)u+="Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n";
   const cb=charsFor(ed.chars,low);if(cb)u+="Character table:\n"+cb+"\n\n";
   u+="<translation>\n"+pc+"\n</translation>";
-  const raw=await ask(sys,u,edAbort.signal,mdl);
+  const raw=await ask(sys,u,edAbort.signal,mdl),trunc=lastTrunc;
   let text=raw,notes="";const i=raw.indexOf("===CHANGES===");
   if(i>=0){text=raw.slice(0,i);notes=raw.slice(i+13).trim()}
   text=text.replace(/^\s*<translation>\s*/i,"").replace(/\s*<\/translation>\s*$/i,"").trim();
+  if(trunc)return{text:pc,notes:"Bản sửa bị cắt giữa chừng, giữ nguyên đoạn này.",trunc:true};
   return{text:fixNl(text),notes};
 }
 
-async function comparePiece(pc,seg,mdl){
+async function comparePiece(pc,seg,mdl,strict){
   const low=(pc+seg).toLowerCase();
   const g=parseGl(ed.gl).filter(([a,b])=>low.includes(a.toLowerCase())||(b&&low.includes(b.toLowerCase())));
   const st=styles.find(s=>s.id===ed.styleId);
-  const sys=[`You are an editor checking a translation into ${ed.tl} against its source (${ed.sl}).`,
-    "Do these in order:\n1. Find source content that is missing from the translation. Translate it into the target language, in the same voice, and INSERT it at the right place. Add nothing that is not in the source.\n2. Fix mistranslated meaning. Use the glossary and character table for names, terms and forms of address.\n3. Remove text that is in the translation but not in the source (extra text). Keep every other wording unchanged. The output must contain no Chinese characters.",
+  const sys=[`You are an editor checking a translation into ${ed.tl} against its source (${ed.sl}). The source passage and the translation passage correspond to each other exactly: they cover the same part of the story, no more and no less.`,
+    "Work only inside this passage:\n1. Find source content that is missing from the translation and insert its translation (same voice, right place). Insert ONLY content that is truly absent. If the same event or dialogue already appears in the translation, even in different words, do NOT add it again.\n2. Fix mistranslated meaning. Use the glossary and character table for names, terms and forms of address.\n3. Remove text that is in the translation but has no counterpart in the source, and remove any passage that repeats earlier text.\nKeep every other sentence unchanged. Never write the same event twice. Never copy the source text. The output must contain no Chinese characters.",
+    ...(strict?["STRICT MODE: your previous answer was far too long and probably repeated content. The output must be about as long as the existing translation, plus only the sentences that are genuinely missing."]:[]),
     ...(st?["Keep the voice of this style guide:\n"+st.prompt]:[]),
     ...(ed.extra.trim()?["Extra instructions from the reader: "+ed.extra.trim()]:[]),
     "Output format: the COMPLETE revised translation (one paragraph per line), then on a new line exactly ===REPORT=== followed by one JSON object only, with no other text: {\"coverage\": <integer 0-100, percent of the source content present in the translation>, \"missing\": [{\"desc\": <short Vietnamese description>, \"fixed\": <true if you inserted it, else false>}], \"wrong\": [{\"desc\": <short Vietnamese description>, \"fixed\": <true if you corrected it>}], \"extra\": [{\"desc\": <short Vietnamese description>, \"fixed\": <true if you removed it>}]}"].join("\n");
@@ -1067,13 +1259,21 @@ async function comparePiece(pc,seg,mdl){
   if(g.length)u+="Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n";
   const cb=charsFor(ed.chars,low);if(cb)u+="Character table:\n"+cb+"\n\n";
   u+="<source>\n"+seg+"\n</source>\n\n<translation>\n"+pc+"\n</translation>";
-  const raw=await ask(sys,u,edAbort.signal,mdl);
+  const raw=await ask(sys,u,edAbort.signal,mdl),trunc=lastTrunc;
   let text=raw,rep=null;const i=raw.indexOf("===REPORT===");
   if(i>=0){const m=raw.slice(i+12).match(/\{[\s\S]*\}/);if(m){try{rep=JSON.parse(m[0])}catch(e){}}text=raw.slice(0,i)}
   text=text.replace(/^\s*<translation>\s*/i,"").replace(/\s*<\/translation>\s*$/i,"").trim();
   const arr=v=>Array.isArray(v)?v.map(x=>typeof x==="string"?{desc:x.trim(),fixed:false}:{desc:String((x&&(x.desc||x.text||x.item))||"").trim(),fixed:!!x&&(x.fixed===true||x.fixed==="true")}).filter(x=>x.desc):[];
   const cov=rep&&Number.isFinite(+rep.coverage)?Math.max(0,Math.min(100,+rep.coverage)):null;
-  return{text:fixNl(text),cov,miss:arr(rep&&rep.missing),wrong:arr(rep&&rep.wrong),extra:arr(rep&&rep.extra)};
+  return{text:fixNl(text),cov,miss:arr(rep&&rep.missing),wrong:arr(rep&&rep.wrong),extra:arr(rep&&rep.extra),trunc};
+}
+/* So một khúc dịch với đúng khúc gốc của nó. Chặn kết quả phình to (lặp) hoặc bị cắt giữa chừng */
+async function compareSeg(T,R,mdl){
+  const over=(x,base)=>base&&(x.trunc||x.text.length>base*Math.max(1.35,(x.cov?100/Math.max(x.cov,35):1.2)*1.15));
+  let x=await comparePiece(T,R,mdl,false);
+  if(over(x,T.length))x=await comparePiece(T,R,mdl,true);
+  if(over(x,T.length)){x.text=T;x.guard=true}
+  return x;
 }
 
 /* Dịch lại riêng các dòng còn chữ Trung. Chỉ gửi những dòng đó nên rất tiết kiệm token. */
@@ -1101,37 +1301,48 @@ async function repairHan(text,mdl){
 }
 
 async function step1(r,mdl){
-  r.tr=cleanJunk(r.tr,junkOf()).text;r.raw=cleanJunk(r.raw,junkOf()).text;
-  const o=ed.opts,T=r.tr;let t=T;r.notes="";
-  if(!T.trim()){r.out="";r.out1="";r.han1=0;r.han=0;r.lenWarn=null;r.warns=["Chương chưa có bản dịch, hãy chạy bước 2 để dịch từ bản gốc."];r.status="warn";r.accept=true;r.manual=false;r.edited=false;return}
-  if(o.spell||o.gloss||o.pron){
-    const pcs=T.length<=4500?[T]:splitText(T,4500),outs=[],notes=[];
-    for(const pc of pcs){const x=await editPiece(pc,mdl);outs.push(x.text);if(x.notes)notes.push(x.notes)}
-    t=outs.join("\n");r.notes=notes.join("\n");
+  cleanRow(r);
+  const o=ed.opts,segs=ensureSegs(r),notes=[];r.notes="";
+  if(!segs.some(g=>g.tr.trim())){r.out="";r.out1="";r.han1=0;r.han=0;r.lenWarn=null;r.warns=["Chương chưa có bản dịch, hãy chạy bước 2 để dịch từ bản gốc."];r.status="warn";r.accept=true;r.manual=false;r.edited=false;return}
+  for(const g of segs){
+    if(!g.tr.trim()){g.o1="";continue}
+    let t=g.tr;
+    if(o.spell||o.gloss||o.pron){
+      const pcs=t.length<=9000?[t]:splitText(t,4500),outs=[];
+      for(const pc of pcs){const x=await editPiece(pc,mdl);outs.push(x.text);if(x.notes)notes.push(x.notes)}
+      t=outs.join("\n");
+    }
+    g.o1=await repairHan(fixPunct(t.trim()),mdl);
   }
-  t=await repairHan(fixPunct(t.trim()),mdl);
-  r.out=t;r.out1=t;r.han1=hanCount(t);r.han=r.han1;r.lenWarn=lenPct(T,t);
+  const t=segs.map(g=>g.o1||"").filter(Boolean).join("\n");
+  r.notes=notes.join("\n");r.out=t;r.out1=t;r.han1=hanCount(t);r.han=r.han1;r.lenWarn=lenPct(r.tr,t);
   finalize(r);
 }
 
 async function step2(r,mdl){
-  r.raw=cleanJunk(r.raw,junkOf()).text;
-  const T=r.out||r.tr,R=r.raw,rl=R.length,single=T.length+rl<=14000;
-  const empty=!T.trim(),rawPcs=empty?splitText(R,4000):null;let pi=0;
-  const pcs=empty?rawPcs.map(()=>""):(single?[T]:splitText(T,4500));let acc=0;const outs=[],covs=[],miss=[],wrong=[],extra=[];
-  for(const pc of pcs){
-    const seg=empty?rawPcs[pi++]:single?R:R.slice(Math.max(0,Math.floor((acc/T.length-.12)*rl)),Math.min(rl,Math.ceil(((acc+pc.length)/T.length+.12)*rl)));
-    acc+=pc.length;
-    const x=await comparePiece(pc,seg,mdl);
-    outs.push(x.text);if(x.cov!=null)covs.push(x.cov);miss.push(...x.miss);wrong.push(...x.wrong);extra.push(...x.extra);
+  cleanRow(r);
+  const segs=ensureSegs(r),outs=[],covs=[],cw=[],miss=[],wrong=[],extra=[],gn=[];
+  let gi=0;
+  for(const g of segs){
+    gi++;
+    const T=g.o1||g.tr||"",R=g.raw||"";
+    if(!R.trim()){g.o2=T;if(T)outs.push(T);continue}
+    const x=await compareSeg(T,R,mdl);
+    if(x.guard)gn.push(`Khúc ${gi}/${segs.length}: bản sửa quá dài hoặc bị cắt giữa chừng, đã giữ nguyên bản dịch cũ của khúc này.`);
+    g.o2=x.text;if(x.text)outs.push(x.text);
+    if(x.cov!=null){covs.push(x.cov);cw.push(R.length)}
+    miss.push(...x.miss);wrong.push(...x.wrong);extra.push(...x.extra);
   }
   let out=await repairHan(fixPunct(outs.join("\n").trim()),mdl);
-  const base=(r.out1||r.tr).length,lim=base?base*1.1:Infinity;
-  const dl=dedupLocal(out,40,(ed.dupSim||85)/100);out=dl.text;r.dupRemoved=dl.removed;r.dupLog=dl.log;r.dupAI=false;
-  if(out.length>lim){out=await dedupAI(out,mdl);r.dupAI=true;}
-  r.dupWarn=out.length>lim;r.dupPct=Math.round(out.length/Math.max(1,base)*100);
-  const cov=covs.length?Math.round(covs.reduce((a,b)=>a+b,0)/covs.length):null;
-  r.out=out;r.out2=out;r.rep={cov,miss,wrong,extra,rawLen:rl};r.han=hanCount(out);r.lenWarn=lenPct(r.tr,out);
+  const cavg=cw.length?covs.reduce((a,v,k)=>a+v*cw[k],0)/cw.reduce((a,b)=>a+b,0):null;
+  const th=(ed.dupSim||85)/100,bth=({92:.6,85:.5,75:.4})[ed.dupSim||85]||.5;
+  const dl=dedupLocal(out,40,th);out=dl.text;const db=dedupBlocks(out,bth);out=db.text;
+  r.dupRemoved=dl.removed+db.removed;r.dupLog=[...dl.log,...db.log].slice(0,10);r.dupAI=false;
+  const base=(r.out1||r.tr).length,f=Math.max(1.1,cavg?100/Math.max(cavg,40)*1.05:1.1),lim=base?base*f:Infinity;
+  if(out.length>lim){out=await dedupAI(out,mdl);r.dupAI=true}
+  r.dupWarn=out.length>lim;r.dupPct=Math.round(out.length/Math.max(1,base)*100);r.dupLim=Math.round(f*100);
+  r.out=out;r.out2=out;r.notes=[r.notes,...gn].filter(Boolean).join("\n");
+  r.rep={cov:cavg==null?null:Math.round(cavg),miss,wrong,extra,rawLen:r.raw.length};r.han=hanCount(out);r.lenWarn=lenPct(r.tr,out);
   finalize(r);
 }
 
@@ -1208,6 +1419,7 @@ async function runEd(mode,only){
 async function redoRow(r){
   if(edRunning)return;
   Object.assign(r,{s1:false,s2:false,out:"",out1:"",out2:"",dupRemoved:0,dupWarn:false,dupAI:false,edited:false,manual:false,rep:null,han:0,han1:0,notes:"",warns:[],status:"",lenWarn:null});
+  if(r.segs){if(r.legacy)r.segs=null;else r.segs.forEach(g=>{delete g.o1;delete g.o2})}
   await put("edch",r);await runEd(0,[r]);
 }
 
@@ -1281,7 +1493,7 @@ function renderEd(){
     el("pre",{cls:"nt",textContent:stepLine(1)+"\n"+stepLine(2)}),el("p",{cls:"hint",textContent:cleanLine()}),
     el("div",{cls:"row",style:"margin:10px 0"},
       ...stepBtns(1),...stepBtns(2),el("button",{disabled:edRunning,textContent:"Chạy tự động cả hai bước",on:{click:()=>runEd(0)}}),...dedupBtns(),
-      el("button",{textContent:"Xuất EPUB",on:{click:edEpub}}),el("button",{textContent:"Xuất .txt",on:{click:edTxt}}),el("button",{disabled:edRunning,textContent:"Làm sạch lại",title:"Xoá dòng trống, ký tự đánh dấu, ghi chú của AI và từ rác",on:{click:cleanAll}})),
+      el("button",{textContent:"Xuất EPUB",on:{click:edEpub}}),el("button",{textContent:"Xuất .txt",on:{click:edTxt}}),el("button",{disabled:edRunning,textContent:"Làm sạch lại",title:"Xoá dòng trống, ký tự đánh dấu, ghi chú của AI và từ rác",on:{click:cleanAll}}),el("button",{disabled:edRunning,textContent:"Quét tên riêng",title:"Tìm tên riêng viết khác nhau giữa các chương",on:{click:()=>{edNames=scanNames();renderEd()}}})),
     el("div",{id:"edStatus",role:"status"}),keepRow(),authorRow());
   const ck=(k,l)=>el("label",{cls:"chk"},el("input",{type:"checkbox",checked:o[k],disabled:dis,on:{change:async e=>{o[k]=e.target.checked;await edSave()}}})," "+l);
   const ss=el("select",{disabled:dis,on:{change:async e=>{ed.styleId=e.target.value;await edSave()}}},el("option",{value:"",textContent:"(Không dùng văn phong)"}));
@@ -1318,7 +1530,7 @@ function renderEd(){
     }
   });
   if(edRows.length>edShow)list.append(el("button",{textContent:`Hiện thêm (còn ${edRows.length-edShow} chương)`,on:{click:()=>{edShow+=50;renderEd()}}}));
-  W.append(head,dedupBox(),renderReport(),opt,list);
+  W.append(head,dedupBox(),renderReport(),namesBox(),opt,list);
 }
 $("edGlFile").onclick=()=>$("edGlIn").click();
 $("edGlIn").onchange=async e=>{const f=e.target.files[0];if(f)$("edGl").value=await readTxt(f);e.target.value=""};
