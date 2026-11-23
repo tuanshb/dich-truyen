@@ -650,11 +650,11 @@ function titleRow(r,dis){
 }
 /* Loại bỏ câu/đoạn lặp sau bước 2 */
 const dedupKey=s=>s.toLowerCase().replace(/[\s\p{P}]+/gu,"");
-function dedupLocal(text){
-  const seen=new Set();let removed=0;
+function dedupLocal(text,min=30,seen=new Set()){
+  let removed=0;
   const out=text.split("\n").map(p=>{
     const sents=p.split(/(?<=[.!?…"”])\s+/);
-    const kept=sents.filter(x=>{const k=dedupKey(x);if(k.length<30)return true;if(seen.has(k)){removed++;return false}seen.add(k);return true});
+    const kept=sents.filter(x=>{const k=dedupKey(x);if(k.length<min)return true;if(seen.has(k)){removed++;return false}seen.add(k);return true});
     return kept.length===sents.length?p:kept.join(" ").trim();
   }).filter(p=>p.trim().length>0);
   return{text:out.join("\n"),removed};
@@ -679,6 +679,28 @@ function copyBtn(getText){
       t.remove();edSay(ok?"Đã sao chép nội dung.":"Không sao chép được, hãy chọn và sao chép bằng tay.",!ok);
     }
   }}});
+}
+/* Soát lặp toàn bộ truyện (chỉ khi người dùng bấm). Phạm vi xử lý là cả truyện, nhưng việc so sánh câu lặp chỉ thực hiện trong từng chương */
+async function dedupAll(){
+  if(edRunning||!ed||!edRows.length)return;
+  if(!confirm("Soát lặp toàn bộ truyện? Mỗi chương được soát riêng: câu từ 40 ký tự trở lên lặp lại trong cùng chương sẽ bị xoá, giữ lại lần đầu. Không so sánh với chương khác. Không hoàn tác được, nên xuất EPUB hoặc sao lưu trước."))return;
+  edRunning=true;renderEd();
+  let total=0,chapters=0;
+  try{
+    for(const r of edRows){
+      if(r.accept===false)continue;
+      const cur=bestTxt(r);if(!cur)continue;
+      const res=dedupLocal(cur,40,new Set());
+      if(res.removed>0){
+        r.out=res.text;r.edited=true;r.dupAll=(r.dupAll||0)+res.removed;
+        total+=res.removed;chapters++;
+        await put("edch",r);
+      }
+    }
+    await edSave();
+    edSay(total?`Soát lặp xong: đã xoá ${total} câu lặp trong ${chapters} chương.`:"Soát lặp xong: không có câu lặp từ 40 ký tự trở lên trong cùng chương.");
+  }catch(e){edSay("Lỗi khi soát lặp: "+e.message,1)}
+  edRunning=false;renderEd();renderEdLib();
 }
 function keepRow(){
   const sup=wlSupported();
@@ -989,7 +1011,7 @@ function renderEd(){
     el("div",{cls:"bar"},el("i",{style:"width:"+pct+"%"})),
     el("pre",{cls:"nt",textContent:stepLine(1)+"\n"+stepLine(2)}),
     el("div",{cls:"row",style:"margin:10px 0"},
-      ...stepBtns(1),...stepBtns(2),el("button",{disabled:edRunning,textContent:"Chạy tự động cả hai bước",on:{click:()=>runEd(0)}}),
+      ...stepBtns(1),...stepBtns(2),el("button",{disabled:edRunning,textContent:"Chạy tự động cả hai bước",on:{click:()=>runEd(0)}}),el("button",{disabled:edRunning,textContent:"Soát lặp toàn bộ",title:"Chỉ chạy khi bấm. Phạm vi xử lý là cả truyện, nhưng chỉ so câu lặp trong từng chương (từ 40 ký tự).",on:{click:dedupAll}}),
       el("button",{textContent:"Xuất EPUB",on:{click:edEpub}}),el("button",{textContent:"Xuất .txt",on:{click:edTxt}})),
     el("div",{id:"edStatus",role:"status"}),keepRow(),authorRow());
   const ck=(k,l)=>el("label",{cls:"chk"},el("input",{type:"checkbox",checked:o[k],disabled:dis,on:{change:async e=>{o[k]=e.target.checked;await edSave()}}})," "+l);
