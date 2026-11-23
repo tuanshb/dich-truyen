@@ -649,15 +649,53 @@ function titleRow(r,dis){
     el("p",{cls:"hint",textContent:hasCjk?"⚠ Tên chương còn chữ Trung. Sửa tay hoặc bấm Dịch tiêu đề bằng AI.":"Tên này sẽ dùng cho mục lục EPUB."}));
 }
 /* Loại bỏ câu/đoạn lặp sau bước 2 */
-const dedupKey=s=>s.toLowerCase().replace(/[\s\p{P}]+/gu,"");
-function dedupLocal(text,min=30,seen=new Set()){
-  let removed=0;
-  const out=text.split("\n").map(p=>{
-    const sents=p.split(/(?<=[.!?…"”])\s+/);
-    const kept=sents.filter(x=>{const k=dedupKey(x);if(k.length<min)return true;if(seen.has(k)){removed++;return false}seen.add(k);return true});
-    return kept.length===sents.length?p:kept.join(" ").trim();
-  }).filter(p=>p.trim().length>0);
-  return{text:out.join("\n"),removed};
+/* Loại bỏ đoạn/câu lặp theo NỘI DUNG (không cần giống hệt từng ký tự): bỏ dấu, bỏ dấu câu và khoảng trắng, rồi so độ giống bằng cụm 3 ký tự */
+const fold=s=>s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu,"");
+const gramsOf=k=>{const g=new Set();for(let i=0;i<=k.length-3;i++)g.add(k.slice(i,i+3));return g};
+const mkUnit=s=>{const k=fold(s);return{k,g:gramsOf(k)}};
+function dupScore(a,b,th){
+  const la=a.k.length,lb=b.k.length,lr=Math.min(la,lb)/Math.max(1,Math.max(la,lb));
+  if(lr<0.5)return 0;
+  let inter=0;const[s,l]=a.g.size<=b.g.size?[a.g,b.g]:[b.g,a.g];
+  for(const x of s)if(l.has(x))inter++;
+  const dice=2*inter/Math.max(1,a.g.size+b.g.size);
+  if(lr>=0.75&&dice>=th)return dice;
+  const cont=inter/Math.max(1,a.g.size);
+  if(la<=lb&&cont>=Math.max(0.92,th+0.05))return cont;
+  return 0;
+}
+function dedupLocal(text,min=40,th=0.85){
+  const log=[];let removed=0;
+  const note=(t,sc)=>{removed++;if(log.length<10)log.push({t:t.length>80?t.slice(0,80)+"…":t,s:Math.round(sc*100)})};
+  /* Lượt 1: so từng đoạn (dòng) với các đoạn đã giữ trước đó trong cùng chương */
+  const keptP=[],cmpP=[];
+  for(const p of text.split("\n")){
+    if(!p.trim())continue;
+    const u=mkUnit(p);
+    if(u.k.length>=min){
+      let hit=0;
+      for(const q of cmpP){hit=dupScore(u,q,th);if(hit)break}
+      if(hit){note(p,hit);continue}
+      cmpP.push(u);
+    }
+    keptP.push(p);
+  }
+  /* Lượt 2: so từng câu với các câu gần đó (80 câu gần nhất) và với mọi câu trùng khóa trong cùng chương */
+  const recent=[],exact=new Set();
+  const out=keptP.map(p=>{
+    const ss=p.split(/(?<=[.!?…"”])\s+/);
+    const keep=ss.filter(x=>{
+      const u=mkUnit(x);
+      if(u.k.length<min)return true;
+      if(exact.has(u.k)){note(x,1);return false}
+      let hit=0;
+      for(let i=Math.max(0,recent.length-80);i<recent.length;i++){hit=dupScore(u,recent[i],th);if(hit)break}
+      if(hit){note(x,hit);return false}
+      recent.push(u);exact.add(u.k);return true;
+    });
+    return keep.length===ss.length?p:keep.join(" ").trim();
+  }).filter(p=>p.trim());
+  return{text:out.join("\n"),removed,log};
 }
 async function dedupAI(text,mdl){
   const pcs=text.length<=4500?[text]:splitText(text,4500),outs=[];
@@ -698,7 +736,7 @@ function dedupBox(){
     el("p",{cls:"hint",textContent:`${state} · chương ${Math.min(c.i,c.n)}/${c.n}${c.title&&!c.done?": "+c.title:""} · đã xoá ${c.total} câu lặp trong ${c.chapters} chương`}));
 }
 function dedupBtns(){
-  if(!dedupCtl||dedupCtl.done)return[el("button",{disabled:edRunning,textContent:"Soát lặp toàn bộ",title:"Chỉ chạy khi bấm. Phạm vi xử lý là cả truyện, nhưng chỉ so câu lặp trong từng chương (từ 40 ký tự).",on:{click:dedupAll}})];
+  if(!dedupCtl||dedupCtl.done)return[el("select",{title:"Độ giống tối thiểu để coi là lặp",disabled:edRunning,"aria-label":"Độ giống tối thiểu để coi là lặp",on:{change:async e=>{ed.dupSim=+e.target.value;await edSave()}}},...[[92,"Chặt (giống ≥92%)"],[85,"Vừa (giống ≥85%)"],[75,"Rộng (giống ≥75%)"]].map(([v,t])=>el("option",{value:String(v),textContent:t,selected:(ed.dupSim||85)===v}))),el("button",{disabled:edRunning,textContent:"Soát lặp toàn bộ",title:"Chỉ chạy khi bấm. So theo nội dung (bỏ dấu, dấu câu, khoảng trắng), chỉ trong từng chương, từ 40 ký tự.",on:{click:dedupAll}})];
   return[
     el("button",{cls:"p",textContent:dedupCtl.paused?"Soát tiếp":"Tạm dừng soát",on:{click:()=>dedupCtl.paused?dedupResume():dedupPause()}}),
     el("button",{textContent:"Dừng soát",on:{click:dedupStop}})];
@@ -716,9 +754,9 @@ async function dedupAll(){
       if(r.accept!==false){
         const cur=bestTxt(r);
         if(cur){
-          const res=dedupLocal(cur,40,new Set());
+          const res=dedupLocal(cur,40,(ed.dupSim||85)/100);
           if(res.removed>0){
-            r.out=res.text;r.edited=true;r.dupAll=(r.dupAll||0)+res.removed;
+            r.out=res.text;r.edited=true;r.dupAll=(r.dupAll||0)+res.removed;r.dupLog=res.log;
             dedupCtl.total+=res.removed;dedupCtl.chapters++;
             await put("edch",r);
           }
@@ -896,7 +934,7 @@ async function step2(r,mdl){
   }
   let out=await repairHan(fixPunct(outs.join("\n").trim()),mdl);
   const base=(r.out1||r.tr).length,lim=base*1.1;
-  const dl=dedupLocal(out);out=dl.text;r.dupRemoved=dl.removed;r.dupAI=false;
+  const dl=dedupLocal(out,40,(ed.dupSim||85)/100);out=dl.text;r.dupRemoved=dl.removed;r.dupLog=dl.log;r.dupAI=false;
   if(out.length>lim){out=await dedupAI(out,mdl);r.dupAI=true;}
   r.dupWarn=out.length>lim;r.dupPct=Math.round(out.length/Math.max(1,base)*100);
   const cov=covs.length?Math.round(covs.reduce((a,b)=>a+b,0)/covs.length):null;
@@ -1073,7 +1111,7 @@ function renderEd(){
       const d=el("div",{style:"margin:4px 0 12px"});d.append(titleRow(r,dis));
       if(r.out){
         d.append(el("label",{cls:"chk"},el("input",{type:"checkbox",checked:r.accept,on:{change:async e=>{r.accept=e.target.checked;await put("edch",r)}}})," Dùng bản đã sửa khi xuất file"));
-        if(r.dupRemoved)d.append(el("p",{cls:"hint",textContent:"Đã loại bỏ "+r.dupRemoved+" câu/đoạn lặp sau bước 2"+(r.dupAI?" (có soát thêm bằng AI).":".")}));if(r.warns&&r.warns.length)d.append(el("pre",{cls:"nt",textContent:"⚠ "+r.warns.join("\n⚠ ")}));if(r.rep)d.append(el("pre",{cls:"nt",textContent:"Độ bao phủ "+(r.rep.cov==null?"n/a":r.rep.cov+"%")+"\n"+(repLines(r.rep).join("\n")||"Không có ý thiếu, thừa hoặc sai.")}));if(r.notes)d.append(el("pre",{cls:"nt",textContent:r.notes}));
+        if(r.dupRemoved)d.append(el("p",{cls:"hint",textContent:"Đã loại bỏ "+r.dupRemoved+" câu/đoạn lặp sau bước 2"+(r.dupAI?" (có soát thêm bằng AI).":".")}));if(r.dupLog&&r.dupLog.length)d.append(el("pre",{cls:"nt",textContent:"Đã xoá vì giống đoạn đứng trước (giữ bản đầu):\n"+r.dupLog.map(x=>"• ("+x.s+"%) "+x.t).join("\n")}));if(r.warns&&r.warns.length)d.append(el("pre",{cls:"nt",textContent:"⚠ "+r.warns.join("\n⚠ ")}));if(r.rep)d.append(el("pre",{cls:"nt",textContent:"Độ bao phủ "+(r.rep.cov==null?"n/a":r.rep.cov+"%")+"\n"+(repLines(r.rep).join("\n")||"Không có ý thiếu, thừa hoặc sai.")}));if(r.notes)d.append(el("pre",{cls:"nt",textContent:r.notes}));
         d.append(el("div",{cls:"row",style:"align-items:center"},el("label",{textContent:"Bản đã sửa (có thể chỉnh tay)"}),el("button",{textContent:"Mở toàn màn hình",on:{click:()=>openFs(r)}}),copyBtn(()=>r.out)),hlArea(r.out,{style:"min-height:180px",onChange:async v=>{r.out=v;r.edited=true;await put("edch",r)}}));
       }
       d.append(el("div",{cls:"row",style:"align-items:center"},el("label",{textContent:"Bản dịch hiện có"}),copyBtn(()=>r.tr)),el("textarea",{value:r.tr,readOnly:true,style:"min-height:120px"}));
