@@ -45,19 +45,25 @@ body.bi .sr{display:block}
 .mt button{flex:1;border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:12px 8px;font-weight:600;color:var(--mute)}
 .mt button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--acc)}
 #tabSc{max-width:1350px;margin:12px auto 0;padding:0 20px 16px}
-#scFrame{display:block;width:100%;height:calc(100dvh - 140px);min-height:480px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+#scFrame{display:block;width:100%;height:calc(100dvh - 140px - var(--bh,0px));min-height:480px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .it .sm{padding:8px 9px;font-size:13px}.it .sm.d{color:var(--err)}
 .hl-wrap{position:relative}
 .hl-wrap textarea{position:relative;z-index:1;background:transparent;width:100%}
 .hl-mirror{position:absolute;inset:0;z-index:0;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;margin:0;padding:8px 10px;border:1px solid transparent;border-radius:6px;background:var(--bg);color:transparent;pointer-events:none;font:inherit;box-sizing:border-box}
 .hl-mirror .hz{background:rgba(255,213,74,.7);border-radius:3px;color:transparent}
-.fs{position:fixed;inset:0;z-index:50;background:var(--bg);padding:12px;display:flex;flex-direction:column;gap:8px;padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+.fs{position:fixed;inset:var(--bh,0px) 0 0 0;z-index:50;background:var(--bg);padding:12px;display:flex;flex-direction:column;gap:8px;padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
 .fs-h{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .fs .hl-wrap{flex:1;min-height:0;display:flex}
 .fs .hl-wrap textarea{flex:1;height:100%;resize:none}
+#keyBanner{position:sticky;top:0;z-index:70;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;background:#b3261e;color:#fff;font-size:14px;line-height:1.45}
+@media(prefers-color-scheme:dark){#keyBanner{background:#8f241d}}
+#keyBanner #kbText{flex:1 1 260px}#keyBanner .kbBtns{display:flex;gap:6px;flex-wrap:wrap}
+#keyBanner button{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.65);padding:6px 12px;border-radius:6px}
+.docbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}.docbar .ctl{margin:0}.docbar .hint{margin:0;flex:1 1 200px}
 </style>
 </head>
 <body>
+<div id="keyBanner" role="alert" hidden><span aria-hidden="true">⚠</span><span id="kbText"></span><span class="kbBtns"><button type="button" id="kbAdd">Thêm key</button><button type="button" id="kbRetry">Thử lại</button><button type="button" id="kbX" aria-label="Ẩn cảnh báo">✕</button></span></div>
 <header><h1>Dịch truyện AI</h1><span>Dữ liệu và key chỉ lưu trong trình duyệt này.</span></header>
 <nav class="mt" role="tablist" aria-label="Chức năng"><button role="tab" id="mt1" aria-selected="true">Dịch truyện</button><button role="tab" id="mt2" aria-selected="false">Cào truyện</button><button role="tab" id="mt3" aria-selected="false">Biên tập</button></nav>
 <main id="tabTr">
@@ -109,10 +115,10 @@ body.bi .sr{display:block}
 <label class="chk"><input type="checkbox" id="edRebuild" checked> Ghép lại theo cấu trúc chương của bản gốc</label>
 <p class="hint">Dùng khi bản dịch bị chia nhỏ hoặc sai số chương. Số chương và tên chương lấy theo bản gốc, đoạn dịch được ghép về đúng chương. Cần có file bản gốc.</p>
 <div class="row"><div><label for="edSl">Ngôn ngữ gốc</label><input id="edSl" value="Tiếng Trung"></div><div><label for="edTl">Ngôn ngữ bản dịch</label><input id="edTl" value="Tiếng Việt"></div></div>
-<label for="edGl">Bảng thuật ngữ và tên riêng (Gốc = Dịch, mỗi dòng một mục)</label><textarea id="edGl"></textarea>
+<label for="edGl">Bảng thuật ngữ và tên riêng (theo mẫu, hoặc mỗi dòng Gốc = Dịch)</label><textarea id="edGl" style="min-height:90px"></textarea>
+<label for="edChars">Bảng nhân vật và xưng hô (theo mẫu, tùy chọn)</label><textarea id="edChars" style="min-height:90px"></textarea>
 <label for="edJunk">Từ hoặc cụm từ rác cần xoá (tùy chọn, mỗi dòng một mục)</label><textarea id="edJunk" style="min-height:60px" placeholder="Ví dụ: tên trang web, câu quảng cáo…"></textarea>
-<div class="row" style="margin-top:8px"><button id="edGlFile">Mở file bảng thuật ngữ</button><button id="edGo" class="p">Tạo dự án</button></div>
-<input id="edGlIn" type="file" accept=".txt,text/plain" hidden>
+<div class="row" style="margin-top:8px"><button id="edGo" class="p">Tạo dự án</button></div>
 <p class="hint">Chương của hai file được ghép theo số chương trong tiêu đề (hỗ trợ 第N章, Chapter N, Chương N). Nếu không ghép được thì ghép theo thứ tự.</p>
 </details>
 </aside>
@@ -136,7 +142,7 @@ try{Object.assign(cfg,JSON.parse(localStorage.getItem("dichtruyen:cfg")||"{}"))}
 const saveCfg=()=>{try{localStorage.setItem("dichtruyen:cfg",JSON.stringify(cfg))}catch(e){}};
 const today=()=>new Date().toISOString().slice(0,10);
 function usage(){try{const u=JSON.parse(localStorage.getItem("dichtruyen:use")||"{}");return u.d===today()?u:{d:today(),n:0}}catch(e){return{d:today(),n:0}}}
-function bump(){const u=usage();u.n++;try{localStorage.setItem("dichtruyen:use",JSON.stringify(u))}catch(e){}showUse()}
+function bump(){const u=usage();u.n++;try{localStorage.setItem("dichtruyen:use",JSON.stringify(u))}catch(e){}showUse();updateBanner()}
 function showUse(){$("use").textContent=`Hôm nay đã gọi ${usage().n} lượt${cfg.cap>0?" / "+cfg.cap:""}.`}
 const SEED=[
 ["Tiên hiệp / kiếm hiệp","Giọng cổ trang. Ưu tiên từ Hán Việt cho tên người, địa danh, tông môn, cảnh giới, công pháp, pháp bảo (ví dụ: Luyện Khí, Trúc Cơ, Kim Đan). Xưng hô theo vai vế: ta/ngươi, huynh/đệ, sư phụ/đệ tử, tiền bối/vãn bối; nhân vật chính xưng 'ta'. Câu văn trang trọng, nhịp chắc, miêu tả giao đấu dứt khoát. Giữ nguyên tên riêng đã có trong thuật ngữ. Không dùng từ lóng hiện đại."],
@@ -237,7 +243,233 @@ function checkSection(){
   if(verifyMsg)sec.append(el("pre",{cls:"nt",textContent:verifyMsg.join("\n")}));
   return sec;
 }
-const parseGl=t=>t.split("\n").map(l=>l.split("=")).filter(a=>a.length>=2&&a[0].trim()).map(a=>[a[0].trim(),a.slice(1).join("=").trim()]);
+/* ---------- Bảng thuật ngữ và bảng nhân vật theo mẫu (nhập từ file .txt) ---------- */
+const SEP_LINE=/^[=\-_*~#\s]{3,}$/;
+const HEAD_MARK=/^(?:[IVXLC]{1,6}|[A-Z]|\d{1,2})[.)]\s+/;
+const upperRatio=s=>{const L=s.match(/\p{L}/gu)||[];if(!L.length)return 0;return L.filter(c=>c===c.toUpperCase()&&c!==c.toLowerCase()).length/L.length};
+function isHeading(l){
+  const t=String(l).trim();if(!t||t.length>90||/[=|]/.test(t))return false;
+  const m=t.match(HEAD_MARK);
+  if(m)return upperRatio(t.slice(m[0].length).replace(/\(.*$/,""))>=0.7;
+  return upperRatio(t)>=0.9&&(t.match(/\p{L}/gu)||[]).length>=3;
+}
+const headName=l=>String(l).trim().replace(HEAD_MARK,"");
+function splitOutside(s){
+  const out=[];let cur="",d=0;
+  for(let i=0;i<s.length;i++){
+    const c=s[i];
+    if("(（[".includes(c))d++;else if(")）]".includes(c))d=Math.max(0,d-1);
+    if(d===0&&(c===","||c===";"||c==="，"||c==="；")){out.push(cur);cur="";continue}
+    if(d===0&&c==="/"&&s[i-1]===" "&&s[i+1]===" "){out.push(cur);cur="";i++;continue}
+    cur+=c;
+  }
+  out.push(cur);return out.map(x=>x.trim()).filter(Boolean);
+}
+const isCjk=s=>/[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]/.test(s);
+const escRe2=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+const reCache=new Map();
+/* Tìm một từ/cụm trong văn bản (hay đã viết thường). Chữ Latin: khớp theo ranh giới từ; chữ CJK: khớp chuỗi con */
+function hitText(needle,hay){
+  needle=String(needle||"").trim().toLowerCase();if(!needle)return false;
+  if(isCjk(needle)||needle.length>40)return hay.includes(needle);
+  let re=reCache.get(needle);
+  if(re===undefined){
+    if(reCache.size>6000)reCache.clear();
+    try{re=new RegExp("(?<![\\p{L}\\p{N}])"+escRe2(needle)+"(?![\\p{L}\\p{N}])","u")}catch(e){re=null}
+    reCache.set(needle,re);
+  }
+  return re?re.test(hay):hay.includes(needle);
+}
+/* ----- Bảng thuật ngữ ----- */
+function parseGlossaryLine(l){
+  let i=l.indexOf(" = "),w=3;if(i<0){i=l.indexOf("=");w=1}
+  if(i<=0)return null;
+  let left=l.slice(0,i).trim();const right=l.slice(i+w).trim();
+  if(!left||!right)return null;
+  const lab=left.match(/^([^=:：(（"“]{1,30})[:：]\s*(.+)$/);if(lab)left=lab[2].trim();
+  const srcs=splitOutside(left.replace(/[“”"]/g,"")).map(x=>x.replace(/\s*[（(].*?[）)]\s*/g," ").trim()).filter(Boolean);
+  if(!srcs.length)return null;
+  return{srcs,tr:right,keep:/^giữ nguyên\b/i.test(right),line:l};
+}
+function parseGlossaryDoc(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n");
+  const entries=[],rules=[],sections=[];let inRules=false,first=true,seen=false,title="";
+  const heads=lines.filter(isHeading).length;
+  for(const raw of lines){
+    const l=raw.trim();if(!l||SEP_LINE.test(l))continue;
+    if(first){first=false;if(!/[=|]/.test(l)&&l.length<=120&&(heads>0||/ngữ|glossar|thuật/i.test(l))){title=l;continue}}
+    if(isHeading(l)){const s=headName(l);sections.push(s);inRules=/quy tắc|quy ước|nhất quán|rule|lưu ý/i.test(s);seen=true;continue}
+    if(heads>0&&!seen){rules.push(l);continue}
+    if(inRules||/^(?:[-•*]|\d{1,2}[.)])\s+/.test(l)){rules.push(l.replace(/^(?:[-•*]|\d{1,2}[.)])\s+/,""));continue}
+    const e=parseGlossaryLine(l);
+    if(e)entries.push(e);else rules.push(l);
+  }
+  return{title,entries,rules,sections};
+}
+const glCache={t:null,d:null};
+function glDoc(text){text=String(text||"");if(glCache.t!==text){glCache.t=text;glCache.d=parseGlossaryDoc(text)}return glCache.d}
+/* Danh sách cặp [nguồn, dịch] đã bung từng biến thể nguồn (dùng để kiểm tra trùng) */
+const parseGl=t=>glDoc(t).entries.flatMap(e=>e.srcs.map(s=>[s,e.keep?s:e.tr]));
+const trCands=e=>e.keep?[]:e.tr.replace(/\s*[（(].*?[）)]\s*/g," ").split(/\s+\/\s+|;/).map(x=>x.trim()).filter(x=>x.length>=2);
+function glBlock(text,hay,opts){
+  const d=glDoc(text);if(!d.entries.length&&!d.rules.length)return"";
+  const lines=[],seen=new Set();
+  for(const e of d.entries){
+    const hit=e.srcs.some(s=>hitText(s,hay))||(opts&&opts.tr&&trCands(e).some(c=>hitText(c,hay)));
+    if(!hit||seen.has(e.line))continue;
+    seen.add(e.line);lines.push(e.line);
+  }
+  let out="";
+  if(lines.length)out+="Glossary (source = translation; follow it exactly):\n"+lines.slice(0,150).join("\n")+"\n\n";
+  if(d.rules.length)out+="Glossary rules (always apply):\n"+d.rules.join("\n").slice(0,2500)+"\n\n";
+  return out;
+}
+function appendGlossary(gl,s,t){
+  const L=String(gl||"").replace(/\s+$/,"");
+  const lastHead=L.split("\n").reverse().find(l=>isHeading(l));
+  const has=lastHead&&/từ mới/i.test(lastHead);
+  return (L?L+(has?"\n":"\n\nTỪ MỚI\n"):"TỪ MỚI\n")+`${s} = ${t}`;
+}
+/* ----- Bảng nhân vật và xưng hô ----- */
+const STOPN=new Set(["the","and","của","chief","inspector","mr","mrs","ms","dr"]);
+function nameVariants(cell){
+  const out=new Set();
+  const base=cell.replace(/[（(].*?[）)]/g," ");
+  const paren=[...cell.matchAll(/[（(]([^）)]*)[）)]/g)].map(m=>m[1]);
+  const quoted=[...cell.matchAll(/["“”]([^"“”]{2,40})["“”]/g)].map(m=>m[1]);
+  for(const nm of [...splitOutside(base),...quoted,...paren.filter(p=>p.length<=24&&!/:/.test(p))]){
+    const n=nm.trim();if(n.length<2)continue;
+    out.add(n.toLowerCase());
+    for(const w of n.split(/\s+/))if(w.length>=3&&!STOPN.has(w.toLowerCase()))out.add(w.toLowerCase());
+  }
+  return[...out];
+}
+function parseCharsDoc(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n");
+  const d={title:"",intro:[],rows:[],pairs:[],rules:[],hdrRows:"",hdrPairs:""};
+  let kind=null,first=true,seen=false,last=null;
+  const heads=lines.filter(isHeading).length;
+  for(const raw of lines){
+    const l=raw.trim();if(!l||SEP_LINE.test(l))continue;
+    if(first){first=false;if(!l.includes("|")&&l.length<=120&&(heads>0||upperRatio(l)>=0.8)){d.title=l;continue}}
+    if(isHeading(l)){const s=headName(l);kind=/xưng hô|cặp|pair/i.test(s)?"pairs":/quy tắc|quy ước|rule/i.test(s)?"rules":/nhân vật|character/i.test(s)?"rows":"other";seen=true;last=null;continue}
+    if(heads>0&&!seen){d.intro.push(l);continue}
+    if(/^[-–—=]{2,}\s*(.+?)\s*[-–—=]{2,}$/.test(l)){last=null;continue}
+    if(kind==="rules"){d.rules.push(l);continue}
+    if(l.includes("|")){
+      const cells=l.split("|").map(x=>x.trim());
+      if(kind==="pairs"){
+        if(/^cặp$/i.test(cells[0])){d.hdrPairs=l;continue}
+        const parts=cells[0].split(/\s+[–—-]\s+/).flatMap(p=>p.split("/")).map(x=>x.trim()).filter(Boolean);
+        const p={parts,line:l};d.pairs.push(p);last=p;continue;
+      }
+      if(/^(?:tên|name)$/i.test(cells[0])){d.hdrRows=l;continue}
+      const r={names:nameVariants(cells[0]),line:l};d.rows.push(r);last=r;continue;
+    }
+    if(last&&/^[(（]/.test(l))last.line+="\n"+l;
+    else if(kind)d.rules.push(l);else d.intro.push(l);
+  }
+  return d;
+}
+const chCache={t:null,d:null};
+function charsDoc(text){text=String(text||"");if(chCache.t!==text){chCache.t=text;chCache.d=parseCharsDoc(text)}return chCache.d}
+const CHARS_HEAD="Character and relationship table (authoritative; always keep names, gender, pronouns, forms of address and relationships consistent with it across all chapters)";
+function charsBlock(text,hay){
+  const t=String(text||"").trim();if(!t)return"";
+  const d=charsDoc(t);
+  if(!d.rows.length&&!d.pairs.length)return CHARS_HEAD+":\n"+charsFor(t,hay)+"\n\n";   // văn bản tự do
+  const hitAny=names=>names.some(n=>hitText(n,hay));
+  const rows=d.rows.filter(r=>hitAny(r.names));
+  const pairs=d.pairs.filter(p=>p.parts.filter(x=>hitText(x,hay)||hitAny(nameVariants(x))).length>=2);
+  let out=CHARS_HEAD+(d.intro.length?"\nNotes: "+d.intro.slice(0,4).join(" ").slice(0,600):"")+":\n";
+  if(rows.length)out+=(d.hdrRows?d.hdrRows+"\n":"")+rows.map(r=>r.line).join("\n")+"\n";
+  if(pairs.length)out+=(d.hdrPairs?d.hdrPairs+"\n":"")+pairs.map(p=>p.line).join("\n")+"\n";
+  if(d.rules.length)out+="General rules:\n"+d.rules.join("\n").slice(0,2500)+"\n";
+  return out.slice(0,9000)+"\n";
+}
+/* ----- Mẫu, nhập file ----- */
+const GL_PH="I. ĐỊA DANH\nTên gốc / Tên viết tắt = bản dịch (ghi chú nếu cần)\nĐịa danh A, Địa danh B = giữ nguyên\n\nII. CHỨC DANH – TỔ CHỨC\nChức danh gốc = bản dịch\n\nV. QUY TẮC NHẤT QUÁN\n- \"từ gốc\" luôn = bản dịch cố định.";
+const CH_PH="A. NHÂN VẬT\nTên | Vai trò | Kể | Tự xưng\n--- Nhóm 1 ---\nNhân vật A | Vai trò, tuổi, quan hệ | ông | tôi\n\nB. XƯNG HÔ THEO CẶP\nCặp | A gọi B | B gọi A | Ghi chú\nNhân vật A – Nhân vật B | ... | ... | ...\n\nC. QUY TẮC CHUNG\n1. Ngôi tự xưng mặc định.";
+const TEMPLATES={
+gl:`BẢNG THUẬT NGỮ – TÊN TRUYỆN (Ngôn ngữ gốc → Việt)
+Quy ước: giữ nguyên = để nguyên dạng gốc. Một thuật ngữ = một bản dịch xuyên suốt.
+================================================================
+
+I. ĐỊA DANH
+Tên gốc / Tên viết tắt = bản dịch (ghi chú nếu cần)
+Địa danh A, Địa danh B, Địa danh C = giữ nguyên
+
+II. CHỨC DANH – TỔ CHỨC
+Chức danh gốc = bản dịch
+Chức danh X / chức danh Y = bản dịch chung
+
+III. VẬT DỤNG – KHÁI NIỆM
+Thuật ngữ gốc = bản dịch (ghi chú)
+
+IV. TÊN RIÊNG & KÝ HIỆU
+Tên riêng = Tên riêng (giữ nguyên)
+
+V. QUY TẮC NHẤT QUÁN
+- "từ gốc" luôn = bản dịch cố định.
+- Quy tắc xưng hô hoặc cách viết riêng của truyện.
+`,
+chars:`BẢNG NHÂN VẬT & XƯNG HÔ – TÊN TRUYỆN
+Ghi chú chung: tên giữ nguyên hay dịch; cột "Kể" = cách người kể gọi nhân vật; cột "Tự xưng" dùng trong lời thoại.
+================================================================
+
+A. NHÂN VẬT
+Tên | Vai trò | Kể | Tự xưng
+
+--- Nhóm 1 ---
+Nhân vật A | Vai trò, tuổi, quan hệ chính | ông | tôi
+Nhân vật B, Nhân vật C | Vai trò chung của hai người | anh | tôi
+(Ghi chú riêng cho nhân vật phía trên nếu cần)
+
+--- Nhóm 2 ---
+Nhân vật D | Vai trò | cô | em / tôi
+
+B. XƯNG HÔ THEO CẶP (mặc định, chỉ đổi khi ngữ cảnh gốc đổi)
+Cặp | A gọi B | B gọi A | Ghi chú
+Nhân vật A – Nhân vật D | "D" / cô | "A" / ông | tôi – cô; quan hệ cấp trên – đàn em
+
+C. QUY TẮC CHUNG
+1. Ngôi tự xưng mặc định.
+2. Cách người kể gọi nhân vật.
+3. Khi nào được đổi cách xưng hô.
+`};
+function downloadTemplate(kind){
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([TEMPLATES[kind]],{type:"text/plain;charset=utf-8"}));
+  a.download=kind==="gl"?"mau-bang-thuat-ngu.txt":"mau-bang-nhan-vat.txt";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function summarizeDoc(kind,text){
+  if(kind==="gl"){const d=glDoc(text);return{n:d.entries.length,msg:`${d.entries.length} thuật ngữ, ${d.sections.length} nhóm, ${d.rules.length} dòng quy tắc`}}
+  const d=charsDoc(text);return{n:d.rows.length+d.pairs.length,msg:`${d.rows.length} nhân vật, ${d.pairs.length} cặp xưng hô, ${d.rules.length} dòng quy tắc`};
+}
+function applyImport(ta,kind,text,fname,info){
+  text=String(text||"").replace(/\r/g,"").replace(/^\ufeff/,"");
+  let mode="replace";
+  if(ta.value.trim())mode=confirm(`Ô này đã có nội dung.\nOK = thay thế bằng nội dung file "${fname}".\nHủy = nối thêm vào cuối.`)?"replace":"append";
+  ta.value=mode==="replace"?text:ta.value.replace(/\s+$/,"")+"\n\n"+text;
+  ta.dispatchEvent(new Event("input",{bubbles:true}));ta.dispatchEvent(new Event("change",{bubbles:true}));
+  const s=summarizeDoc(kind,ta.value);
+  info.textContent=`Đã nhập "${fname}" (${mode==="replace"?"thay thế":"nối thêm"}): ${s.msg}.`+(s.n?"":" Không nhận ra dòng nào theo mẫu, nội dung vẫn được lưu nguyên văn. Bấm biểu tượng tải xuống để lấy file mẫu.");
+}
+function docBar(getTa,kind){
+  const info=el("p",{cls:"hint"});
+  const fi=el("input",{type:"file",accept:".txt,text/plain",hidden:true,on:{change:async e=>{
+    const f=e.target.files[0];e.target.value="";if(!f)return;
+    const ta=getTa();if(ta.disabled||ta.readOnly){alert("Ô này đang bị khoá. Hãy dừng tác vụ đang chạy rồi thử lại.");return}
+    applyImport(ta,kind,await readTxt(f),f.name,info);
+  }}});
+  const imp=el("button",{type:"button",cls:"ci",title:"Nhập từ file .txt theo mẫu",textContent:"📂",on:{click:()=>fi.click()}});
+  const tpl=el("button",{type:"button",cls:"ci",title:"Tải file mẫu định dạng",textContent:"⬇",on:{click:()=>downloadTemplate(kind)}});
+  return el("div",{cls:"docbar"},el("div",{cls:"ctl"},imp,tpl,fi),info);
+}
+function glSection(){
+  const t=el("textarea",{value:book.gl||"",placeholder:GL_PH,style:"min-height:130px",on:{change:async e=>{book.gl=e.target.value;await put("books",book)}}});
+  return el("section",{},el("h2",{textContent:"Bảng thuật ngữ của truyện"}),t,docBar(()=>t,"gl"));
+}
+
 /* ---------- AI ---------- */
 const sleep=(ms,sig)=>new Promise((ok,no)=>{const t=setTimeout(ok,ms);sig&&sig.addEventListener("abort",()=>{clearTimeout(t);no(new DOMException("x","AbortError"))},{once:true})});
 const fail=(r,j)=>{const e=new Error((j&&j.error&&j.error.message)||("Lỗi "+r.status));e.status=r.status;return e};
@@ -262,12 +494,19 @@ async function ask(sys,user,sg,mdl){
   const ks=keys();let tries=0,n429=0;
   while(tries++<ks.length*3+4){
     const k=pickKey();
-    if(!k){const w=Math.min(...ks.map(x=>cool[x]))-Date.now();if(w>120000)throw new Error("Mọi key đều đang bị khoá hoặc không hợp lệ.");await sleep(Math.max(1000,w),sig);continue}
-    try{return await callAI(sys,user,sig,k,mdl)}
+    if(!k){
+      const w=Math.min(...ks.map(x=>cool[x]))-Date.now();
+      if(w>120000){
+        ks.forEach(x=>{const h=health[x];if(!h||h.until<Date.now())noteKey(x,"quota",cool[x]-Date.now())});
+        const er=new Error("Mọi key đều đang bị khoá hoặc đã hết lượt.");er.quota=true;throw er;
+      }
+      await sleep(Math.max(1000,w),sig);continue;
+    }
+    try{const out=await callAI(sys,user,sig,k,mdl);noteKey(k,"ok",0);return out}
     catch(e){
       if(e.name==="AbortError")throw e;
-      if((e.status===401||e.status===402||e.status===403)&&ks.length>1){cool[k]=Date.now()+864e5;continue}
-      if(e.status===429){cool[k]=Date.now()+65000;if(++n429>=ks.length*2+1){e.quota=true;throw e}continue}
+      if(e.status===401||e.status===402||e.status===403){cool[k]=Date.now()+864e5;noteKey(k,"bad",864e5);if(ks.length>1)continue;throw e}
+      if(e.status===429){cool[k]=Date.now()+65000;noteKey(k,"rate",65000);if(++n429>=ks.length*2+1){ks.forEach(x=>noteKey(x,"quota",3600e3));e.quota=true;throw e}continue}
       if(e.status>=500){await sleep(8000,sig);continue}
       throw e;
     }
@@ -275,26 +514,18 @@ async function ask(sys,user,sg,mdl){
   throw new Error("Máy chủ liên tục báo lỗi.");
 }
 const fixNl=t=>String(t||"").replace(/\\n/g,"\n");
-function charBlock(low){
-  const t=(book.chars||"").trim();if(!t)return[];
-  let use=t;
-  if(t.length>5000){
-    const L=t.split("\n").filter(x=>x.trim());
-    use=L.filter((l,i)=>i<3||l.split(/[|:：=\t,，、/()（）\-–—]+/).map(x=>x.trim().toLowerCase()).some(x=>x.length>=2&&x.length<=40&&low.includes(x))).join("\n").slice(0,5000);
-  }
-  return["Character and relationship table (authoritative; always keep names, gender, pronouns, forms of address and relationships consistent with it across all chapters):\n"+use];
-}
+function charBlock(low){const b=charsBlock(book.chars,low);return b?[b.trim()]:[]}
 async function translateChunk(c,srcOv,depth){
   const src=srcOv||c.src;depth=depth||0;
   const st=styles.find(s=>s.id===book.styleId)||styles[0],low=src.toLowerCase();
-  const g=parseGl(book.gl).filter(([a])=>low.includes(a.toLowerCase()));
+  
   const sys=["You are a professional literary translator working on fiction.",
     `Translate from ${book.sl&&book.sl!=="Tự nhận diện"?book.sl:"the source language (detect it automatically)"} into ${book.tl}.`,
     "Style guide from the reader:\n"+(st?st.prompt:""),...charBlock(low),
     "Rules: keep paragraph structure and line breaks; keep dialogue as dialogue; never summarize, omit or add content; use glossary terms exactly; keep names consistent; follow the character table (if given) for names, gender, pronouns, forms of address and relationships. Never output chapter titles or chapter numbers inside the translation (the chapter title is handled separately) and never repeat the context passage.",
     cfg.extract?"Output format: first the translation only, with no notes. Then on a new line exactly ===TERMS=== followed by a JSON array of NEW proper nouns (character names, places, organizations, techniques, items, titles) found in this passage and missing from the glossary, as [{\"s\":\"source\",\"t\":\"your translation\"}]. Use [] if none.":"Output ONLY the translation, with no notes or commentary."].join("\n");
   let user="";
-  if(g.length)user+="Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n";
+  user+=glBlock(book.gl,low);
   const pv=chunks[c.idx-1];
   if(pv&&pv.tr&&pv.ch===c.ch)user+="<context>\nContext only: never translate it and never repeat it in your answer. End of the previous passage:\n"+pv.src.slice(-300)+"\n=> "+pv.tr.slice(-300)+"\n</context>\n\n";
   if((!pv||pv.ch!==c.ch)&&c.title!=="Mở đầu")user+=`This passage starts a new chapter titled "${c.title}". Begin your output with one line "===TITLE=== " followed by that chapter title translated into ${book.tl}, then the translation on the following lines.\n\n`;
@@ -477,14 +708,12 @@ function renderAll(){
 }
 function charsSection(){
   const note=el("p",{cls:"hint"});
-  const upd=()=>{const n=(book.chars||"").length;note.textContent=n?`Bảng nhân vật: ${n} ký tự${n>5000?" (quá 5.000 ký tự nên mỗi lượt chỉ gửi các dòng có tên xuất hiện trong đoạn đang dịch)":", gửi kèm mọi lượt dịch"}.`:"Chưa có bảng nhân vật. Dán bảng lấy từ ChatGPT vào đây để giữ xưng hô và quan hệ xuyên suốt các chương."};
-  const ta=el("textarea",{value:book.chars||"",style:"min-height:150px",placeholder:"Tên gốc | Tên dịch | Giới tính | Vai trò | Xưng hô với từng nhân vật khác | Quan hệ\nVí dụ: 林风 | Lâm Phong | Nam | Nhân vật chính | Với Tô Nhi: ta - nàng | Sư huynh của Tô Nhi",on:{change:async e=>{book.chars=e.target.value;await put("books",book);upd()}}});
-  const fi=el("input",{type:"file",accept:".txt,text/plain",hidden:true,on:{change:async e=>{const f=e.target.files[0];if(!f)return;ta.value=await f.text();book.chars=ta.value;await put("books",book);upd();e.target.value=""}}});
-  const pt=`Hãy đọc toàn bộ truyện tôi gửi và lập BẢNG NHÂN VẬT, mỗi nhân vật một dòng theo định dạng: Tên gốc | Tên dịch sang ${book.tl} | Giới tính | Vai trò, tuổi, địa vị | Cách xưng hô khi nói với từng nhân vật quan trọng khác (ví dụ: với A: ta - ngươi; với B: anh - em) | Quan hệ (gia đình, sư môn, kẻ thù, người yêu...). Cuối bảng thêm vài dòng ghi chú quy tắc xưng hô chung. Chỉ xuất bảng, không giải thích.`;
+  const upd=()=>{const t=book.chars||"",c=charsDoc(t);note.textContent=t?`Bảng nhân vật: ${c.rows.length} nhân vật, ${c.pairs.length} cặp xưng hô, ${c.rules.length} dòng quy tắc (${t.length} ký tự). Mỗi lượt dịch chỉ gửi các nhân vật và cặp xưng hô xuất hiện trong đoạn, cùng phần quy tắc chung.`:"Chưa có bảng nhân vật. Nhập từ file .txt theo mẫu, hoặc dán bảng lấy từ ChatGPT, để giữ xưng hô và quan hệ xuyên suốt các chương."};
+  const ta=el("textarea",{value:book.chars||"",style:"min-height:150px",placeholder:CH_PH,on:{change:async e=>{book.chars=e.target.value;await put("books",book);upd()}}});
+  const pt=`Hãy đọc toàn bộ truyện tôi gửi và lập BẢNG NHÂN VẬT & XƯNG HÔ theo đúng định dạng sau, không thêm lời giải thích. Ngôn ngữ đích: ${book.tl}.\nBẢNG NHÂN VẬT & XƯNG HÔ – <TÊN TRUYỆN>\n<1-2 dòng ghi chú chung>\nA. NHÂN VẬT\nTên | Vai trò | Kể | Tự xưng\n--- <Tên nhóm> ---\n<Tên nhân vật> | <vai trò, tuổi, quan hệ> | <cách người kể gọi: ông/bà/anh/cô...> | <tự xưng trong lời thoại>\nB. XƯNG HÔ THEO CẶP\nCặp | A gọi B | B gọi A | Ghi chú\n<Nhân vật 1> – <Nhân vật 2> | ... | ... | ...\nC. QUY TẮC CHUNG\n1. <quy tắc>`;
   upd();
-  return el("section",{},el("h2",{textContent:"Bảng nhân vật và quan hệ"}),ta,
-    el("div",{cls:"row",style:"margin-top:8px"},el("button",{textContent:"Mở file .txt",on:{click:()=>fi.click()}}),
-      el("button",{textContent:"Sao chép prompt cho ChatGPT",on:{click:async()=>{try{await navigator.clipboard.writeText(pt);say("Đã sao chép prompt.")}catch(e){say("Không sao chép được.",1)}}}})),fi,note);
+  return el("section",{},el("h2",{textContent:"Bảng nhân vật và xưng hô"}),ta,docBar(()=>ta,"chars"),
+    el("div",{cls:"row",style:"margin-top:8px"},el("button",{textContent:"Sao chép prompt cho ChatGPT",on:{click:async()=>{try{await navigator.clipboard.writeText(pt);say("Đã sao chép prompt.")}catch(e){say("Không sao chép được.",1)}}}})),note);
 }
 function renderWs(){
   const ws=$("ws");ws.textContent="";
@@ -507,7 +736,7 @@ function renderWs(){
   ws.append(head);ws.append(checkSection());
   if(book.pending.length){
     const p=el("section",{},el("h2",{textContent:`Thuật ngữ đề xuất (${book.pending.length})`}));
-    const approve=async t=>{book.gl+=(book.gl&&!book.gl.endsWith("\n")?"\n":"")+t.s+" = "+t.t;book.pending=book.pending.filter(x=>x!==t);await put("books",book)};
+    const approve=async t=>{book.gl=appendGlossary(book.gl,t.s,t.t);book.pending=book.pending.filter(x=>x!==t);await put("books",book)};
     book.pending.slice(0,40).forEach(t=>p.append(el("div",{cls:"tm"},el("span",{textContent:t.s}),
       el("input",{value:t.t,"aria-label":"Bản dịch của "+t.s,on:{input:e=>t.t=e.target.value}}),
       el("button",{textContent:"Duyệt",on:{click:async()=>{await approve(t);renderWs()}}}),
@@ -516,8 +745,7 @@ function renderWs(){
     ws.append(p);
   }
   ws.append(charsSection());
-  ws.append(el("section",{},el("h2",{textContent:"Bảng thuật ngữ của truyện"}),
-    el("textarea",{value:book.gl,placeholder:"Mỗi dòng: Gốc = Dịch",style:"min-height:110px",on:{change:async e=>{book.gl=e.target.value;await put("books",book)}}})));
+  ws.append(glSection());
   if(curCh>=chs.length)curCh=0;
   const cs=el("select",{on:{change:e=>{curCh=+e.target.value;renderWs()}}});
   chs.forEach((c,i)=>cs.append(el("option",{value:i,selected:i===curCh,textContent:(c.cs.every(x=>x.tr)?"✓ ":"")+(i+1)+". "+c.title})));
@@ -551,7 +779,7 @@ $("stDel").onclick=async()=>{if(styles.length<2){return}const id=$("stSel").valu
 /* ---------- Config UI ---------- */
 const CF=["prov","model","base","delay","cap","max","extract"];
 function cfgToUI(){renderKeys();$("mdHint").textContent=cfg.prov==="openrouter"?"OpenRouter: có thể nhập nhiều model cách nhau dấu phẩy, hệ thống thử lần lượt khi model đầu lỗi hoặc hết lượt. Model miễn phí có đuôi :free, xem danh sách tại openrouter.ai/models.":"";CF.forEach(f=>{const e=$(f);if(f==="extract")e.checked=cfg[f];else e.value=cfg[f]});$("baseW").style.display=cfg.prov==="gemini"?"none":"";showUse()}
-CF.forEach(f=>$(f).addEventListener("input",()=>{const e=$(f);cfg[f]=f==="extract"?e.checked:(["delay","cap","max"].includes(f)?(+e.value||0):e.value);saveCfg();showUse()}));
+CF.forEach(f=>$(f).addEventListener("input",()=>{const e=$(f);cfg[f]=f==="extract"?e.checked:(["delay","cap","max"].includes(f)?(+e.value||0):e.value);saveCfg();showUse();updateBanner()}));
 $("prov").addEventListener("change",()=>{const p=PRESET[$("prov").value];cfg.model=p[1];cfg.base=p[0];cfgToUI();saveCfg()});
 /* ---------- New book ---------- */
 $("nOpen").onclick=()=>$("nFile").click();
@@ -572,7 +800,7 @@ $("nGo").onclick=async()=>{
   say(`Đã tạo truyện: ${inf.kept} chương, ${cs.length} đoạn (tìm thấy ${inf.heads} tiêu đề).`+(bc.drop?` Đã bỏ qua ${bc.drop} ký tự trước Chương 1.`:"")+(w.length?" Lưu ý: "+w.join("; ")+".":" Tách đoạn khớp nguyên văn."));
 };
 /* ---------- Keys ---------- */
-const setKeys=a=>{cfg.key=[...new Set(a)].join(";");saveCfg();renderKeys()};
+const setKeys=a=>{cfg.key=[...new Set(a)].join(";");saveCfg();renderKeys();updateBanner()};
 function renderKeys(){
   const L=$("keyList");L.textContent="";const ks=keys();
   if(!ks.length){L.append(el("p",{cls:"hint",textContent:"Chưa có key nào."}));return}
@@ -884,22 +1112,11 @@ function repLines(rep){
 function openFs(r){
   let ov;
   const wrap=hlArea(r.out||"",{onInput:v=>{r.out=v;r.edited=true}});
-  const tx=()=>wrap.querySelector("textarea");
+  const taEl=wrap.querySelector("textarea");taEl.dataset.ctl="manual";
   const closeAndSave=async()=>{await put("edch",r);ov.remove();renderEd();renderEdLib()};
-  const copyTxt=async()=>{const t=tx();try{await navigator.clipboard.writeText(t.value)}catch(e){t.select();document.execCommand("copy")}edSay("Đã sao chép nội dung.")};
-  const pasteTxt=async()=>{
-    const t=tx();let txt=null;
-    try{txt=await navigator.clipboard.readText()}catch(e){}
-    if(txt==null){edSay("Trình duyệt chưa cho phép đọc clipboard. Hãy nhấn giữ trong ô và chọn Dán.",1);t.focus();return}
-    const a=t.selectionStart,b=t.selectionEnd;
-    t.value=t.value.slice(0,a)+txt+t.value.slice(b);
-    t.dispatchEvent(new Event("input"));
-    t.setSelectionRange(a+txt.length,a+txt.length);t.focus();
-  };
   ov=el("div",{cls:"fs"},
     el("div",{cls:"fs-h"},el("strong",{textContent:`Chỉnh tay · chương ${r.idx+1}${r.trTitle?": "+r.trTitle:""}`}),
-      el("button",{textContent:"📋 Copy",title:"Sao chép toàn bộ nội dung",on:{click:copyTxt}}),
-      el("button",{textContent:"📥 Paste",title:"Dán vào vị trí con trỏ",on:{click:pasteTxt}}),
+      window.fieldCtl.make(taEl),
       el("span",{cls:"hint",textContent:"Chữ Trung được tô vàng."}),
       el("button",{textContent:"Đóng",on:{click:closeAndSave}}),
       el("button",{cls:"p",textContent:"Xác nhận đã chỉnh sửa",on:{click:async()=>{r.manual=true;await closeAndSave()}}})),
@@ -986,17 +1203,7 @@ async function dedupAI(text,mdl){
   return outs.join("\n").trim();
 }
 /* Nút Copy: sao chép toàn bộ nội dung của một ô */
-function copyBtn(getText){
-  return el("button",{textContent:"📋 Copy",title:"Sao chép toàn bộ nội dung ô này",on:{click:async()=>{
-    const v=getText()||"";
-    try{await navigator.clipboard.writeText(v);edSay("Đã sao chép nội dung.")}
-    catch(e){
-      const t=document.createElement("textarea");t.value=v;t.style.position="fixed";t.style.opacity="0";document.body.append(t);t.select();
-      let ok=false;try{ok=document.execCommand("copy")}catch(x){}
-      t.remove();edSay(ok?"Đã sao chép nội dung.":"Không sao chép được, hãy chọn và sao chép bằng tay.",!ok);
-    }
-  }}});
-}
+function copyBtn(){return document.createTextNode("")}
 /* Soát lặp toàn bộ: có tiến trình, tạm dừng, soát tiếp, dừng. Phạm vi xử lý là cả truyện, nhưng chỉ so câu lặp trong từng chương */
 let dedupCtl=null;
 async function dedupGate(){
@@ -1291,7 +1498,7 @@ function namesBox(){
 }
 async function editPiece(pc,mdl){
   const o=ed.opts,low=pc.toLowerCase();
-  const g=parseGl(ed.gl).filter(([a,b])=>low.includes(a.toLowerCase())||(b&&low.includes(b.toLowerCase())));
+  
   const st=styles.find(s=>s.id===ed.styleId),tasks=[];
   if(o.spell)tasks.push("Fix spelling, typos, wrong diacritics, punctuation and obvious grammar errors.");
   if(o.gloss)tasks.push("Make names and terms consistent: use the glossary translations exactly, and unify variant renderings of the same name or term.");
@@ -1304,8 +1511,8 @@ async function editPiece(pc,mdl){
     "Rules: change as little as possible; keep one paragraph per line and the same paragraph order; never summarize or add commentary; output the COMPLETE revised passage.",
     o.notes?"Output format: the revised passage first. Then on a new line exactly ===CHANGES=== followed by at most 6 short bullet points in Vietnamese describing the main fixes (write: Không có thay đổi, if nothing changed).":"Output ONLY the revised passage."].join("\n");
   let u="";
-  if(g.length)u+="Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n";
-  const cb=charsFor(ed.chars,low);if(cb)u+="Character table:\n"+cb+"\n\n";
+  u+=glBlock(ed.gl,low,{tr:true});
+  u+=charsBlock(ed.chars,low);
   u+="<translation>\n"+pc+"\n</translation>";
   const raw=await ask(sys,u,edAbort.signal,mdl),trunc=lastTrunc;
   let text=raw,notes="";const i=raw.indexOf("===CHANGES===");
@@ -1317,7 +1524,7 @@ async function editPiece(pc,mdl){
 
 async function comparePiece(pc,seg,mdl,strict){
   const low=(pc+seg).toLowerCase();
-  const g=parseGl(ed.gl).filter(([a,b])=>low.includes(a.toLowerCase())||(b&&low.includes(b.toLowerCase())));
+  
   const st=styles.find(s=>s.id===ed.styleId);
   const sys=[`You are an editor checking a translation into ${ed.tl} against its source (${ed.sl}). The source passage and the translation passage correspond to each other exactly: they cover the same part of the story, no more and no less.`,
     "Work only inside this passage:\n1. Find source content that is missing from the translation and insert its translation (same voice, right place). Insert ONLY content that is truly absent. If the same event or dialogue already appears in the translation, even in different words, do NOT add it again.\n2. Fix mistranslated meaning. Use the glossary and character table for names, terms and forms of address.\n3. Remove text that is in the translation but has no counterpart in the source, and remove any passage that repeats earlier text.\nKeep every other sentence unchanged. Never write the same event twice. Never copy the source text. The output must contain no Chinese characters.",
@@ -1326,8 +1533,8 @@ async function comparePiece(pc,seg,mdl,strict){
     ...(ed.extra.trim()?["Extra instructions from the reader: "+ed.extra.trim()]:[]),
     "Output format: the COMPLETE revised translation (one paragraph per line), then on a new line exactly ===REPORT=== followed by one JSON object only, with no other text: {\"coverage\": <integer 0-100, percent of the source content present in the translation>, \"missing\": [{\"desc\": <short Vietnamese description>, \"fixed\": <true if you inserted it, else false>}], \"wrong\": [{\"desc\": <short Vietnamese description>, \"fixed\": <true if you corrected it>}], \"extra\": [{\"desc\": <short Vietnamese description>, \"fixed\": <true if you removed it>}]}"].join("\n");
   let u="";
-  if(g.length)u+="Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n";
-  const cb=charsFor(ed.chars,low);if(cb)u+="Character table:\n"+cb+"\n\n";
+  u+=glBlock(ed.gl,low,{tr:true});
+  u+=charsBlock(ed.chars,low);
   u+="<source>\n"+seg+"\n</source>\n\n<translation>\n"+pc+"\n</translation>";
   const raw=await ask(sys,u,edAbort.signal,mdl),trunc=lastTrunc;
   let text=raw,rep=null;const i=raw.indexOf("===REPORT===");
@@ -1356,9 +1563,9 @@ async function repairHan(text,mdl){
     const batch=bad.slice(b,b+20),got=new Array(batch.length).fill(null);
     const src=batch.map(li=>L[li]).join("\n"),low=src.toLowerCase();
     const ctx=[...new Set(batch.flatMap(li=>[L[li-1],L[li+1]]))].filter(x=>x&&!CJK1.test(x)).slice(0,6).join("\n");
-    const g=parseGl(ed.gl).filter(([a,c])=>src.includes(a)||(c&&src.includes(c)));
-    const cb=charsFor(ed.chars,low);
-    const base=(g.length?"Glossary (source = translation):\n"+g.map(x=>x.join(" = ")).join("\n")+"\n\n":"")+(cb?"Character table:\n"+cb+"\n\n":"")+(ctx?"Context (already translated, do not output):\n"+ctx+"\n\n":"");
+    
+    const cb=charsBlock(ed.chars,low);
+    const base=glBlock(ed.gl,low,{tr:true})+cb+(ctx?"Context (already translated, do not output):\n"+ctx+"\n\n":"");
     for(let att=0;att<2;att++){
       const todo=got.map((v,k)=>v===null?k:-1).filter(k=>k>=0);
       if(!todo.length)break;
@@ -1568,15 +1775,15 @@ function renderEd(){
   const ck=(k,l)=>el("label",{cls:"chk"},el("input",{type:"checkbox",checked:o[k],disabled:dis,on:{change:async e=>{o[k]=e.target.checked;await edSave()}}})," "+l);
   const ss=el("select",{disabled:dis,on:{change:async e=>{ed.styleId=e.target.value;await edSave()}}},el("option",{value:"",textContent:"(Không dùng văn phong)"}));
   styles.forEach(s=>ss.append(el("option",{value:s.id,textContent:s.name,selected:s.id===ed.styleId})));
-  const ta=(label,key,ph,h)=>[el("label",{textContent:label}),el("textarea",{value:ed[key]||"",placeholder:ph,disabled:dis,style:"min-height:"+h+"px",on:{change:async e=>{ed[key]=e.target.value;await edSave()}}})];
+  const ta=(label,key,ph,h,kind)=>{const t=el("textarea",{value:ed[key]||"",placeholder:ph,disabled:dis,style:"min-height:"+h+"px",on:{change:async e=>{ed[key]=e.target.value;await edSave()}}});return[el("label",{textContent:label}),t,...(kind?[docBar(()=>t,kind)]:[])]};
   const opt=el("section",{},el("h2",{textContent:"Việc cần làm"}),
     ck("spell","Soát chính tả, dấu câu, lỗi ngữ pháp"),ck("compare","So sánh với bản gốc: bổ sung phần dịch thiếu, sửa dịch sai nghĩa"),
     ck("gloss","Thống nhất thuật ngữ và tên riêng theo bảng chuẩn"),ck("pron","Soát xưng hô và quan hệ giữa các nhân vật"),ck("notes","Ghi chú các thay đổi chính của mỗi chương"),
     el("div",{cls:"row"},el("div",{},el("label",{textContent:"Văn phong giữ khi sửa"}),ss),
       el("div",{},el("label",{textContent:"Model riêng cho biên tập"}),el("input",{value:ed.model||"",placeholder:"Để trống = model ở Kết nối AI",disabled:dis,on:{change:async e=>{ed.model=e.target.value;await edSave()}}}))),
     ...ta("Hướng dẫn thêm (tùy chọn)","extra","Ví dụ: giữ giọng cổ trang, không đổi cách xưng hô đã thống nhất…",70),
-    ...ta("Bảng thuật ngữ và tên riêng (Gốc = Dịch)","gl","Gốc = Dịch",120),
-    ...ta("Bảng nhân vật và quan hệ","chars","Tên gốc | Tên dịch | Giới tính | Xưng hô | Quan hệ",120),
+    ...ta("Bảng thuật ngữ và tên riêng (theo mẫu)","gl",GL_PH,160,"gl"),
+    ...ta("Bảng nhân vật và xưng hô (theo mẫu)","chars",CH_PH,160,"chars"),
     ...ta("Từ hoặc cụm từ rác cần xoá (mỗi dòng một mục, dòng chứa cụm này sẽ bị xoá)","junk","Ví dụ: tên trang web, câu quảng cáo…",70));
   const list=el("section",{},el("h2",{textContent:"Các chương"}),el("p",{cls:"hint",textContent:"Chương chưa biên tập hoặc không chọn \"Dùng bản đã sửa\" sẽ giữ nguyên bản dịch cũ khi xuất file."}));
   const nT=edRows.filter(r=>CJK1.test(r.trTitle||"")).length;
@@ -1602,8 +1809,6 @@ function renderEd(){
   if(edRows.length>edShow)list.append(el("button",{textContent:`Hiện thêm (còn ${edRows.length-edShow} chương)`,on:{click:()=>{edShow+=50;renderEd()}}}));
   W.append(head,dedupBox(),renderReport(),namesBox(),opt,list);
 }
-$("edGlFile").onclick=()=>$("edGlIn").click();
-$("edGlIn").onchange=async e=>{const f=e.target.files[0];if(f)$("edGl").value=await readTxt(f);e.target.value=""};
 $("edGo").onclick=async()=>{
   const ft=$("edTr").files[0],fr=$("edRaw").files[0];
   if(!ft){alert("Hãy chọn file bản dịch (.txt).");return}
@@ -1613,7 +1818,7 @@ $("edGo").onclick=async()=>{
   if(!T.length){alert("File bản dịch không có nội dung.");return}
   let R=[];
   if(fr){const c2=cleanJunk(await readTxt(fr),jl,{keepHeading:true});addSt(st,c2.stats);R=chaptersOf(c2.text)}
-  const base={title:$("edTitle").value.trim()||ft.name.replace(/\.txt$/i,""),sl:$("edSl").value,tl:$("edTl").value,gl:$("edGl").value,chars:"",styleId:"",extra:"",model:"",junk:$("edJunk").value,from:"",opts:{spell:true,compare:true,gloss:true,pron:true,notes:true}};
+  const base={title:$("edTitle").value.trim()||ft.name.replace(/\.txt$/i,""),sl:$("edSl").value,tl:$("edTl").value,gl:$("edGl").value,chars:$("edChars").value,styleId:"",extra:"",model:"",junk:$("edJunk").value,from:"",opts:{spell:true,compare:true,gloss:true,pron:true,notes:true}};
   let rows,msg;
   if(fr&&R.length&&$("edRebuild").checked){
     const R2=(R.length>1&&R[0].title==="Phần đầu")?R.slice(1):R;
@@ -1652,16 +1857,143 @@ function showTab(n){
 }
 $("mt1").onclick=()=>showTab("tr");$("mt2").onclick=()=>showTab("sc");$("mt3").onclick=()=>showTab("ed");
 try{const t=localStorage.getItem("dichtruyen:tab");if(t==="sc"||t==="ed")showTab(t)}catch(e){}
+/* ---------- Cảnh báo toàn cục khi mọi API key đã hết lượt gọi ---------- */
+const health={};
+let bannerOff="";
+const capReached=()=>cfg.cap>0&&usage().n>=cfg.cap;
+function noteKey(k,s,ms){
+  if(s==="ok"){if(health[k])delete health[k]}else health[k]={s,until:Date.now()+ms};
+  updateBanner();
+}
+function bannerState(){
+  const now=Date.now();
+  if(capReached())return{show:true,kind:"cap",text:`Đã dùng hết ${cfg.cap} lượt gọi AI hôm nay (giới hạn bạn đặt ở mục Kết nối AI). Dịch và biên tập đã tạm dừng. Hãy tăng giới hạn hoặc quay lại vào ngày mai.`};
+  const ks=keys();if(!ks.length)return{show:false};
+  const st=ks.map(k=>{const h=health[k];return h&&h.until>now?h.s:"ok"});
+  if(!st.every(x=>x==="quota"||x==="bad"))return{show:false};
+  if(st.every(x=>x==="bad"))return{show:true,kind:"bad",text:`Tất cả ${ks.length} API key đều không dùng được (không hợp lệ, hết tín dụng hoặc bị từ chối). Hãy kiểm tra lại key hoặc thêm key mới.`};
+  const until=Math.max(...ks.map(k=>health[k].until)),t=new Date(until).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"});
+  return{show:true,kind:"quota",text:`Tất cả ${ks.length} API key đều đã hết lượt gọi (hạn mức bị chặn). Dịch và biên tập đã tạm dừng. App sẽ thử lại sau khoảng ${t}, hoặc bạn có thể thêm key mới, đổi model hay nhà cung cấp.`};
+}
+function updateBanner(){
+  const b=$("keyBanner");if(!b)return;
+  const s=bannerState(),sig=s.show?s.kind+":"+s.text:"";
+  if(!s.show||bannerOff===sig){b.hidden=true;document.documentElement.style.setProperty("--bh","0px");return}
+  $("kbText").textContent=s.text;b.hidden=false;
+  document.documentElement.style.setProperty("--bh",(b.offsetHeight||0)+"px");
+}
+$("kbAdd").onclick=()=>{showTab("tr");const k=$("keyIn"),d=k.closest("details");if(d)d.open=true;k.scrollIntoView({block:"center"});k.focus()};
+$("kbRetry").onclick=()=>{for(const k in health)delete health[k];bannerOff="";updateBanner()};
+$("kbX").onclick=()=>{const s=bannerState();bannerOff=s.show?s.kind+":"+s.text:"";updateBanner()};
+setInterval(updateBanner,30000);
+$("edGl").placeholder=GL_PH;$("edChars").placeholder=CH_PH;
+$("edGl").after(docBar(()=>$("edGl"),"gl"));$("edChars").after(docBar(()=>$("edChars"),"chars"));
 /* ---------- Init ---------- */
-$("nText").before(copyBtn(()=>$("nText").value));
+
 (async()=>{
   db=await openDB();books=await all("books");styles=await all("styles");eds=await all("eds");
   if(!styles.length){for(const [n,p] of SEED){const s={id:"s"+Math.random().toString(36).slice(2,9),name:n,prompt:p};await put("styles",s);styles.push(s)}}
   books.forEach(b=>b.pending=b.pending||[]);
-  cfgToUI();renderStyles();renderAll();renderEdLib();renderEd();
+  cfgToUI();renderStyles();renderAll();renderEdLib();renderEd();updateBanner();
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 })();
 if("serviceWorker" in navigator&&location.protocol.startsWith("http"))addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+</script>
+<script>
+(function(){
+  if(window.fieldCtl)return;
+  var ICON={
+    all:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 3"/><rect x="8" y="8" width="8" height="8" rx="1" fill="currentColor" stroke="none"/></svg>',
+    copy:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+    paste:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="m9 14 3 3 3-3"/></svg>'
+  };
+  var CSS=".ctl{display:flex;gap:4px;justify-content:flex-end;align-items:center;margin:3px 0}"+
+   ".ctl .ci,.docbar .ci{width:28px!important;height:28px!important;min-width:28px!important;padding:0!important;margin:0!important;display:inline-flex!important;align-items:center;justify-content:center;border:1px solid var(--line,#cfd8d6)!important;background:var(--panel,var(--card,#fff))!important;color:var(--mute,#5d6b69)!important;border-radius:6px!important;cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto!important}"+
+   ".ctl.sm{margin:1px 0}.ctl.sm .ci{width:22px!important;height:22px!important;min-width:22px!important}.ctl.sm .ci svg{width:13px;height:13px}.ctl .ci:active{background:var(--src,#e6ecea)!important}.ctl .ci:focus-visible{outline:2px solid var(--acc,#1f6f6b);outline-offset:1px}"+
+   ".fld{min-width:0}.fld:has(>[hidden]:not(.ctl)){display:none}.fs-h .ctl{margin:0}"+
+   "#fcToast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#222;color:#fff;padding:8px 14px;border-radius:8px;font:13px system-ui,sans-serif;z-index:300;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center}#fcToast.on{opacity:1}";
+  var tt=null,tm=0;
+  function toast(m){
+    try{
+      if(!tt){tt=document.createElement("div");tt.id="fcToast";tt.setAttribute("role","status");document.body.appendChild(tt)}
+      tt.textContent=m;tt.classList.add("on");clearTimeout(tm);tm=setTimeout(function(){tt.classList.remove("on")},1800);
+    }catch(e){}
+  }
+  function fire(f,names){names.forEach(function(n){f.dispatchEvent(new Event(n,{bubbles:true}))})}
+  function selectAll(f){
+    try{f.focus()}catch(e){}
+    try{f.setSelectionRange(0,f.value.length)}catch(e){try{f.select()}catch(x){}}
+    toast("Đã chọn toàn bộ");
+  }
+  async function copy(f){
+    var hasSel=typeof f.selectionStart==="number"&&typeof f.selectionEnd==="number"&&f.selectionEnd>f.selectionStart;
+    var txt=hasSel?f.value.slice(f.selectionStart,f.selectionEnd):f.value;
+    if(!txt){toast("Ô đang trống");return}
+    try{await navigator.clipboard.writeText(txt)}
+    catch(e){
+      var t=document.createElement("textarea");t.value=txt;t.style.cssText="position:fixed;opacity:0";document.body.appendChild(t);t.select();
+      var ok=false;try{ok=document.execCommand("copy")}catch(x){}
+      t.remove();if(!ok){toast("Không sao chép được");return}
+    }
+    toast(hasSel?"Đã sao chép phần đã chọn":"Đã sao chép toàn bộ");
+  }
+  async function paste(f){
+    if(f.readOnly||f.disabled){toast("Ô này chỉ đọc, không dán được");return}
+    var txt=null;
+    try{txt=await navigator.clipboard.readText()}catch(e){}
+    if(txt==null){try{f.focus()}catch(e){}toast("Trình duyệt chưa cho đọc clipboard. Nhấn giữ trong ô rồi chọn Dán");return}
+    if(f.tagName==="INPUT")txt=txt.trim().replace(/\s*\r?\n\s*/g,f.id==="keyIn"?";":" ");
+    if(f.type==="number"){
+      var n=txt.trim().replace(",",".");
+      if(!/^-?\d+(\.\d+)?$/.test(n)){toast("Nội dung dán không phải số");return}
+      f.value=n;
+    }else{
+      var a=f.value.length,b=a;
+      try{if(typeof f.selectionStart==="number"){a=f.selectionStart;b=f.selectionEnd}}catch(e){}
+      var v=f.value;f.value=v.slice(0,a)+txt+v.slice(b);
+      try{f.setSelectionRange(a+txt.length,a+txt.length)}catch(e){}
+    }
+    try{f.focus()}catch(e){}
+    fire(f,["input","change"]);toast("Đã dán");
+  }
+  function make(f){
+    var bar=document.createElement("div");bar.className=f.tagName==="INPUT"?"ctl sm":"ctl";bar.setAttribute("role","group");bar.setAttribute("aria-label","Điều khiển ô dữ liệu");
+    function mk(icon,title,fn){
+      var b=document.createElement("button");b.type="button";b.className="ci";b.title=title;b.setAttribute("aria-label",title);b.innerHTML=ICON[icon];
+      b.addEventListener("mousedown",function(e){e.preventDefault()});
+      b.addEventListener("click",function(e){e.preventDefault();fn(f)});
+      return b;
+    }
+    bar.appendChild(mk("all","Chọn toàn bộ",selectAll));bar.appendChild(mk("copy","Sao chép",copy));bar.appendChild(mk("paste","Dán",paste));
+    return bar;
+  }
+  var SKIP={checkbox:1,radio:1,file:1,button:1,submit:1,reset:1,range:1,color:1,hidden:1,image:1,date:1,time:1,"datetime-local":1,month:1,week:1};
+  function enhance(f){
+    if(!f||f.dataset&&f.dataset.ctl)return;
+    if(f.tagName==="INPUT"&&SKIP[(f.type||"text").toLowerCase()])return;
+    if(f.closest&&f.closest(".fs,[data-noctl]"))return;
+    f.dataset.ctl="1";
+    var anchor=(f.closest&&f.closest(".hl-wrap"))||f,par=anchor.parentNode;if(!par)return;
+    var w=document.createElement("div");w.className="fld";
+    try{if(getComputedStyle(par).display.indexOf("flex")>=0){w.style.flex="1 1 0";w.style.minWidth="0";if(!par.style.alignItems)par.style.alignItems="flex-end"}}catch(e){}
+    par.insertBefore(w,anchor);w.appendChild(make(f));w.appendChild(anchor);
+  }
+  function scan(root){
+    if(!root||root.nodeType!==1)return;
+    if(root.matches&&root.matches("textarea,input"))enhance(root);
+    if(root.querySelectorAll)root.querySelectorAll("textarea,input").forEach(enhance);
+  }
+  window.fieldCtl={enhance:enhance,make:make,copy:copy,paste:paste,selectAll:selectAll,scan:scan,toast:toast};
+  if(typeof MutationObserver==="undefined"||!document.head||!document.body)return;
+  var st=document.createElement("style");st.textContent=CSS;document.head.appendChild(st);
+  var q=[],sched=false,raf=window.requestAnimationFrame||function(f){return setTimeout(f,16)};
+  var mo=new MutationObserver(function(ms){
+    ms.forEach(function(m){m.addedNodes.forEach(function(n){if(n.nodeType===1)q.push(n)})});
+    if(!sched&&q.length){sched=true;raf(function(){sched=false;var a=q;q=[];a.forEach(scan)})}
+  });
+  function start(){scan(document.body);mo.observe(document.body,{childList:true,subtree:true})}
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
+})();
 </script>
 </body>
 </html>

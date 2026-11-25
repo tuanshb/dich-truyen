@@ -572,5 +572,101 @@ $('#dlEpub3').onclick=async()=>{
 $('#dlTxt3').onclick=()=>{try{const b=t3Book();save(txtBlob(bookText(b),'auto'),safe(b.title)+'.txt')}catch(e){log3('❌ '+e.message)}};
 $('#toTr3').onclick=()=>{try{toTranslator(t3Book(),log3,$('#toTr3'))}catch(e){log3('❌ '+e.message)}};
 </script>
+<script>
+(function(){
+  if(window.fieldCtl)return;
+  var ICON={
+    all:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 3"/><rect x="8" y="8" width="8" height="8" rx="1" fill="currentColor" stroke="none"/></svg>',
+    copy:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+    paste:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="m9 14 3 3 3-3"/></svg>'
+  };
+  var CSS=".ctl{display:flex;gap:4px;justify-content:flex-end;align-items:center;margin:3px 0}"+
+   ".ctl .ci,.docbar .ci{width:28px!important;height:28px!important;min-width:28px!important;padding:0!important;margin:0!important;display:inline-flex!important;align-items:center;justify-content:center;border:1px solid var(--line,#cfd8d6)!important;background:var(--panel,var(--card,#fff))!important;color:var(--mute,#5d6b69)!important;border-radius:6px!important;cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto!important}"+
+   ".ctl.sm{margin:1px 0}.ctl.sm .ci{width:22px!important;height:22px!important;min-width:22px!important}.ctl.sm .ci svg{width:13px;height:13px}.ctl .ci:active{background:var(--src,#e6ecea)!important}.ctl .ci:focus-visible{outline:2px solid var(--acc,#1f6f6b);outline-offset:1px}"+
+   ".fld{min-width:0}.fld:has(>[hidden]:not(.ctl)){display:none}.fs-h .ctl{margin:0}"+
+   "#fcToast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#222;color:#fff;padding:8px 14px;border-radius:8px;font:13px system-ui,sans-serif;z-index:300;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center}#fcToast.on{opacity:1}";
+  var tt=null,tm=0;
+  function toast(m){
+    try{
+      if(!tt){tt=document.createElement("div");tt.id="fcToast";tt.setAttribute("role","status");document.body.appendChild(tt)}
+      tt.textContent=m;tt.classList.add("on");clearTimeout(tm);tm=setTimeout(function(){tt.classList.remove("on")},1800);
+    }catch(e){}
+  }
+  function fire(f,names){names.forEach(function(n){f.dispatchEvent(new Event(n,{bubbles:true}))})}
+  function selectAll(f){
+    try{f.focus()}catch(e){}
+    try{f.setSelectionRange(0,f.value.length)}catch(e){try{f.select()}catch(x){}}
+    toast("Đã chọn toàn bộ");
+  }
+  async function copy(f){
+    var hasSel=typeof f.selectionStart==="number"&&typeof f.selectionEnd==="number"&&f.selectionEnd>f.selectionStart;
+    var txt=hasSel?f.value.slice(f.selectionStart,f.selectionEnd):f.value;
+    if(!txt){toast("Ô đang trống");return}
+    try{await navigator.clipboard.writeText(txt)}
+    catch(e){
+      var t=document.createElement("textarea");t.value=txt;t.style.cssText="position:fixed;opacity:0";document.body.appendChild(t);t.select();
+      var ok=false;try{ok=document.execCommand("copy")}catch(x){}
+      t.remove();if(!ok){toast("Không sao chép được");return}
+    }
+    toast(hasSel?"Đã sao chép phần đã chọn":"Đã sao chép toàn bộ");
+  }
+  async function paste(f){
+    if(f.readOnly||f.disabled){toast("Ô này chỉ đọc, không dán được");return}
+    var txt=null;
+    try{txt=await navigator.clipboard.readText()}catch(e){}
+    if(txt==null){try{f.focus()}catch(e){}toast("Trình duyệt chưa cho đọc clipboard. Nhấn giữ trong ô rồi chọn Dán");return}
+    if(f.tagName==="INPUT")txt=txt.trim().replace(/\s*\r?\n\s*/g,f.id==="keyIn"?";":" ");
+    if(f.type==="number"){
+      var n=txt.trim().replace(",",".");
+      if(!/^-?\d+(\.\d+)?$/.test(n)){toast("Nội dung dán không phải số");return}
+      f.value=n;
+    }else{
+      var a=f.value.length,b=a;
+      try{if(typeof f.selectionStart==="number"){a=f.selectionStart;b=f.selectionEnd}}catch(e){}
+      var v=f.value;f.value=v.slice(0,a)+txt+v.slice(b);
+      try{f.setSelectionRange(a+txt.length,a+txt.length)}catch(e){}
+    }
+    try{f.focus()}catch(e){}
+    fire(f,["input","change"]);toast("Đã dán");
+  }
+  function make(f){
+    var bar=document.createElement("div");bar.className=f.tagName==="INPUT"?"ctl sm":"ctl";bar.setAttribute("role","group");bar.setAttribute("aria-label","Điều khiển ô dữ liệu");
+    function mk(icon,title,fn){
+      var b=document.createElement("button");b.type="button";b.className="ci";b.title=title;b.setAttribute("aria-label",title);b.innerHTML=ICON[icon];
+      b.addEventListener("mousedown",function(e){e.preventDefault()});
+      b.addEventListener("click",function(e){e.preventDefault();fn(f)});
+      return b;
+    }
+    bar.appendChild(mk("all","Chọn toàn bộ",selectAll));bar.appendChild(mk("copy","Sao chép",copy));bar.appendChild(mk("paste","Dán",paste));
+    return bar;
+  }
+  var SKIP={checkbox:1,radio:1,file:1,button:1,submit:1,reset:1,range:1,color:1,hidden:1,image:1,date:1,time:1,"datetime-local":1,month:1,week:1};
+  function enhance(f){
+    if(!f||f.dataset&&f.dataset.ctl)return;
+    if(f.tagName==="INPUT"&&SKIP[(f.type||"text").toLowerCase()])return;
+    if(f.closest&&f.closest(".fs,[data-noctl]"))return;
+    f.dataset.ctl="1";
+    var anchor=(f.closest&&f.closest(".hl-wrap"))||f,par=anchor.parentNode;if(!par)return;
+    var w=document.createElement("div");w.className="fld";
+    try{if(getComputedStyle(par).display.indexOf("flex")>=0){w.style.flex="1 1 0";w.style.minWidth="0";if(!par.style.alignItems)par.style.alignItems="flex-end"}}catch(e){}
+    par.insertBefore(w,anchor);w.appendChild(make(f));w.appendChild(anchor);
+  }
+  function scan(root){
+    if(!root||root.nodeType!==1)return;
+    if(root.matches&&root.matches("textarea,input"))enhance(root);
+    if(root.querySelectorAll)root.querySelectorAll("textarea,input").forEach(enhance);
+  }
+  window.fieldCtl={enhance:enhance,make:make,copy:copy,paste:paste,selectAll:selectAll,scan:scan,toast:toast};
+  if(typeof MutationObserver==="undefined"||!document.head||!document.body)return;
+  var st=document.createElement("style");st.textContent=CSS;document.head.appendChild(st);
+  var q=[],sched=false,raf=window.requestAnimationFrame||function(f){return setTimeout(f,16)};
+  var mo=new MutationObserver(function(ms){
+    ms.forEach(function(m){m.addedNodes.forEach(function(n){if(n.nodeType===1)q.push(n)})});
+    if(!sched&&q.length){sched=true;raf(function(){sched=false;var a=q;q=[];a.forEach(scan)})}
+  });
+  function start(){scan(document.body);mo.observe(document.body,{childList:true,subtree:true})}
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
+})();
+</script>
 </body>
 </html>
